@@ -9,8 +9,8 @@ import { createHtmlPage } from "../utils";
 const db = getDb();
 
 // Requestor Routes Handler
-export async function handleRequestorRoutes(request: Request, path: string): Promise<Response> {
-  const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.REQUESTOR);
+export async function handleRequestorRoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
+  const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
   if (authResult.response) return authResult.response;
   
   const user = { 
@@ -32,7 +32,7 @@ export async function handleRequestorRoutes(request: Request, path: string): Pro
     case '/requestor/requests':
       const requestsUrl = new URL(request.url);
       const viewMode = (requestsUrl.searchParams.get('view') as 'table' | 'timeline') || 'table';
-      const requestsHtml = await RequestorRequests.renderRequestsPage(user, authResult.session.userId, viewMode);
+      const requestsHtml = await RequestorRequests.render(user, viewMode);
       return new Response(createHtmlPage(
         "AFT - My Requests",
         requestsHtml,

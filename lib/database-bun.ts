@@ -75,6 +75,13 @@ export function getDb() {
     // Create tables
     createTables();
     initializeDatabase();
+    
+    // Run migrations
+    import("./database-migrations").then(m => {
+      // Migrations run automatically on import
+    }).catch(err => {
+      console.error("Failed to run migrations:", err);
+    });
   }
   return db;
 }
@@ -157,6 +164,56 @@ function createTables() {
     }
   } catch (e) {
     console.error('Failed to migrate media_drives schema:', e);
+  }
+
+  // Migration: add Section 4 (Anti-Virus Scan and TPI) fields to aft_requests
+  try {
+    const aftColCheck = db.query("PRAGMA table_info(aft_requests)").all() as Array<{ name: string }>;
+    const existingCols = aftColCheck.map(c => c.name);
+    
+    // Section IV Anti-Virus Scan fields
+    if (!existingCols.includes('origination_scan_performed')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_scan_performed BOOLEAN DEFAULT 0");
+    }
+    if (!existingCols.includes('origination_files_scanned')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_files_scanned INTEGER");
+    }
+    if (!existingCols.includes('origination_threats_found')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_threats_found INTEGER DEFAULT 0");
+    }
+    if (!existingCols.includes('destination_scan_performed')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_scan_performed BOOLEAN DEFAULT 0");
+    }
+    if (!existingCols.includes('destination_files_scanned')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_files_scanned INTEGER");
+    }
+    if (!existingCols.includes('destination_threats_found')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_threats_found INTEGER DEFAULT 0");
+    }
+    
+    // Transfer completion fields
+    if (!existingCols.includes('transfer_completed_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN transfer_completed_date INTEGER");
+    }
+    if (!existingCols.includes('files_transferred_count')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN files_transferred_count INTEGER");
+    }
+    if (!existingCols.includes('dta_signature_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN dta_signature_date INTEGER");
+    }
+    if (!existingCols.includes('sme_signature_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN sme_signature_date INTEGER");
+    }
+    if (!existingCols.includes('assigned_sme_id')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN assigned_sme_id INTEGER REFERENCES users(id)");
+    }
+    if (!existingCols.includes('tpi_maintained')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN tpi_maintained BOOLEAN DEFAULT 0");
+    }
+    
+    console.log("✓ DTA Section 4 migrations completed successfully");
+  } catch (e) {
+    console.error('Failed to migrate aft_requests schema for DTA Section 4:', e);
   }
 
   // AFT Requests table

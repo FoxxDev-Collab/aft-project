@@ -438,41 +438,38 @@ export class RequestWizard {
             class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors"
           >
             Save and Close
-          </button>
         </div>
       </div>
     `;
-    
-    // Return full page
-    return `
-      ${RequestorNavigation.renderPageHeader(
-        draftId ? `Request ${existingDraft?.request_number || 'Edit'}` : 'New Request', 
-        existingDraft ? 'View and modify your AFT request' : 'Create your Assured File Transfer request', 
-        user, 
-        '/requestor/new-request'
-      )}
-      
-      <div class="max-w-4xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
+
+    const content = `
         ${statusIndicator}
-        
+
         <form id="aft-request-form" class="space-y-8">
           <input type="hidden" name="draft_id" value="${draftId || ''}" />
           <input type="hidden" name="requestor_id" value="${userId}" />
-          
+
           <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6 space-y-8" id="form-container">
             ${sectionI}
             ${sectionII}
             ${formActions}
           </div>
         </form>
-      </div>
     `;
+
+    return RequestorNavigation.renderLayout(
+      draftId ? `Request ${existingDraft?.request_number || 'Edit'}` : 'New Request',
+      existingDraft ? 'View and modify your AFT request' : 'Create your Assured File Transfer request',
+      user,
+      '/requestor/new-request',
+      content
+    );
   }
 
   static getScript(): string {
     return `
       let fileRowCount = 1;
-      let editMode = true;
+{{ ... }}
 
       document.addEventListener('DOMContentLoaded', function() {
         loadDTAs();

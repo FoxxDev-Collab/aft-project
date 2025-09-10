@@ -1,7 +1,6 @@
 // Admin Security - Security monitoring and audit logs
 import { ComponentBuilder } from "../components/ui/server-components";
 import { AdminNavigation, type AdminUser } from "./admin-nav";
-import { getDb } from "../lib/database-bun";
 
 export class AdminSecurity {
   static async renderAuditLog(user: AdminUser): Promise<string> {

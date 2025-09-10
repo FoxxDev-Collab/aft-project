@@ -122,41 +122,45 @@ export class AdminReports {
       </div>
     `).join('');
 
-    return `
-      ${AdminNavigation.renderPageHeader('Reports & Analytics', 'System reports and data analysis', user, '/admin/reports')}
-      
-      <div class="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
-        <div class="space-y-8">
-          <!-- Report Cards -->
-          <div>
-            <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Report Categories</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              ${reportCardsHtml}
-            </div>
+    const content = `
+      <div class="space-y-8">
+        <!-- Report Cards -->
+        <div>
+          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Report Categories</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ${reportCardsHtml}
           </div>
+        </div>
 
-          <!-- Quick Reports -->
-          <div>
-            <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Quick Reports</h2>
-            <div class="space-y-3">
-              ${quickReportsHtml}
-            </div>
+        <!-- Quick Reports -->
+        <div>
+          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Quick Reports</h2>
+          <div class="space-y-3">
+            ${quickReportsHtml}
           </div>
+        </div>
 
-          <!-- Report History -->
-          <div>
-            <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Recent Reports</h2>
-            <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
-              <div class="text-center py-8">
-                <div class="text-4xl mb-4">📈</div>
-                <h3 class="text-lg font-medium text-[var(--foreground)] mb-2">No Reports Generated</h3>
-                <p class="text-[var(--muted-foreground)]">Generated reports will appear here for download and review.</p>
-              </div>
+        <!-- Report History -->
+        <div>
+          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Recent Reports</h2>
+          <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
+            <div class="text-center py-8">
+              <div class="text-4xl mb-4">📈</div>
+              <h3 class="text-lg font-medium text-[var(--foreground)] mb-2">No Reports Generated</h3>
+              <p class="text-[var(--muted-foreground)]">Generated reports will appear here for download and review.</p>
             </div>
           </div>
         </div>
       </div>
     `;
+
+    return AdminNavigation.renderLayout(
+      'Reports & Analytics',
+      'System reports and data analysis',
+      user,
+      '/admin/reports',
+      content
+    );
   }
 
   static getScript(): string {

@@ -118,15 +118,35 @@ export class MediaCustodianAPI {
     return result.changes > 0;
   }
 
-  static async returnDrive(driveId: number): Promise<boolean> {
+  static async returnDrive(driveId: number): Promise<{ success: boolean; message: string }> {
     const db = getDb();
+    
+    // Check if drive has any active AFT requests
+    const activeRequest = db.query(`
+      SELECT ar.id, ar.status, ar.request_number
+      FROM aft_requests ar 
+      WHERE ar.selected_drive_id = ? 
+      AND ar.status NOT IN ('completed', 'disposed', 'rejected', 'cancelled')
+      LIMIT 1
+    `).get(driveId) as any;
+    
+    if (activeRequest) {
+      return {
+        success: false,
+        message: `Cannot return drive. Associated with active AFT request ${activeRequest.request_number} (${activeRequest.status})`
+      };
+    }
+    
     const result = db.query(`
       UPDATE media_drives 
       SET issued_to_user_id = NULL, returned_at = unixepoch(), status = 'available', last_used = unixepoch(), updated_at = unixepoch()
       WHERE id = ?
     `).run(driveId);
     
-    return result.changes > 0;
+    return {
+      success: result.changes > 0,
+      message: result.changes > 0 ? 'Drive returned successfully' : 'Failed to return drive'
+    };
   }
 
   // Get media inventory (alias for getAllMediaDrives for inventory page)
@@ -483,7 +503,7 @@ export class MediaCustodianAPI {
 }
 
 // API Handler Function
-export async function handleMediaCustodianAPI(request: Request, path: string): Promise<Response | null> {
+export async function handleMediaCustodianAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   const apiPath = path.startsWith('/media-custodian') ? path.substring('/media-custodian'.length) : path;
   // Media Drives API endpoints
   if (apiPath === '/api/drives' && request.method === 'GET') {
@@ -623,20 +643,14 @@ export async function handleMediaCustodianAPI(request: Request, path: string): P
       const pathParts = apiPath.split('/');
       if (pathParts.length < 4 || !pathParts[3]) return null;
       const driveId = parseInt(pathParts[3]);
-      const success = await MediaCustodianAPI.returnDrive(driveId);
+      const result = await MediaCustodianAPI.returnDrive(driveId);
       
-      if (success) {
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } else {
-        return new Response(JSON.stringify({ error: 'Failed to return drive' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     } catch (error) {
-      return new Response(JSON.stringify({ error: 'Failed to return drive' }), {
+      return new Response(JSON.stringify({ success: false, message: 'Failed to return drive' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -651,6 +665,86 @@ export async function handleMediaCustodianAPI(request: Request, path: string): P
       });
     } catch (error) {
       return new Response(JSON.stringify({ error: 'Failed to fetch users' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // AFT Request processing endpoints
+  if (apiPath === '/api/requests' && request.method === 'GET') {
+    try {
+      const url = new URL(request.url);
+      const query = Object.fromEntries(url.searchParams);
+      const requests = await MediaCustodianAPI.getAllRequests(query);
+      return new Response(JSON.stringify(requests), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Failed to fetch requests' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  if (apiPath.startsWith('/api/requests/') && apiPath.includes('/process') && request.method === 'POST') {
+    try {
+      const pathParts = apiPath.split('/');
+      if (pathParts.length < 4 || !pathParts[3]) return null;
+      const requestId = parseInt(pathParts[3]);
+      const requestBody = await request.json() as any;
+      
+      const result = await MediaCustodianAPI.processRequest(
+        requestId,
+        requestBody.action,
+        requestBody.userId,
+        requestBody.notes
+      );
+      
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Failed to process request' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // Check if drive can be returned (AFT request completed)
+  if (apiPath.startsWith('/api/drives/') && apiPath.endsWith('/can-return') && request.method === 'GET') {
+    try {
+      const pathParts = apiPath.split('/');
+      if (pathParts.length < 4 || !pathParts[3]) return null;
+      const driveId = parseInt(pathParts[3]);
+      
+      const db = getDb();
+      // Check if drive has any active AFT requests
+      const activeRequest = db.query(`
+        SELECT ar.id, ar.status 
+        FROM aft_requests ar 
+        WHERE ar.selected_drive_id = ? 
+        AND ar.status NOT IN ('completed', 'disposed', 'rejected', 'cancelled')
+        LIMIT 1
+      `).get(driveId) as any;
+      
+      const canReturn = !activeRequest;
+      const message = activeRequest 
+        ? `Drive is associated with active AFT request #${activeRequest.id} (${activeRequest.status})`
+        : 'Drive can be returned';
+      
+      return new Response(JSON.stringify({ 
+        canReturn, 
+        message,
+        activeRequest: activeRequest || null 
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Failed to check drive return status' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       });

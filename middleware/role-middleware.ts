@@ -2,30 +2,22 @@
 import { type SecureSession, validateSession } from "../lib/security";
 import { UserRole, type UserRoleType } from "../lib/database-bun";
 
-// Get client IP address
-function getClientIP(request: Request): string {
-  return request.headers.get('x-forwarded-for') || 
-         request.headers.get('x-real-ip') || 
-         'unknown';
-}
-
 // Check if user is authenticated and has selected a role
-export async function requireAuth(request: Request): Promise<SecureSession | null> {
+export async function requireAuth(request: Request, ipAddress: string): Promise<SecureSession | null> {
   const cookies = request.headers.get("cookie");
   if (!cookies) return null;
   
   const sessionMatch = cookies.match(/session=([^;]+)/);
   if (!sessionMatch || !sessionMatch[1]) return null;
   
-  const ipAddress = getClientIP(request);
   const userAgent = request.headers.get('user-agent') || 'unknown';
   
   return await validateSession(sessionMatch[1], ipAddress, userAgent);
 }
 
 // Check if user has selected an active role
-export async function requireRoleSelection(request: Request): Promise<SecureSession | null> {
-  const session = await requireAuth(request);
+export async function requireRoleSelection(request: Request, ipAddress: string): Promise<SecureSession | null> {
+  const session = await requireAuth(request, ipAddress);
   
   if (!session) return null;
   
@@ -38,8 +30,8 @@ export async function requireRoleSelection(request: Request): Promise<SecureSess
 }
 
 // Check if user has a specific role
-export async function requireRole(request: Request, requiredRole: UserRoleType): Promise<SecureSession | null> {
-  const session = await requireRoleSelection(request);
+export async function requireRole(request: Request, requiredRole: UserRoleType, ipAddress: string): Promise<SecureSession | null> {
+  const session = await requireRoleSelection(request, ipAddress);
   
   if (!session) return null;
   
@@ -52,8 +44,8 @@ export async function requireRole(request: Request, requiredRole: UserRoleType):
 }
 
 // Check if user has any of the specified roles
-export async function requireAnyRole(request: Request, requiredRoles: UserRoleType[]): Promise<SecureSession | null> {
-  const session = await requireRoleSelection(request);
+export async function requireAnyRole(request: Request, requiredRoles: UserRoleType[], ipAddress: string): Promise<SecureSession | null> {
+  const session = await requireRoleSelection(request, ipAddress);
   
   if (!session) return null;
   
@@ -66,8 +58,8 @@ export async function requireAnyRole(request: Request, requiredRoles: UserRoleTy
 }
 
 // Check if user has admin role
-export async function requireAdmin(request: Request): Promise<SecureSession | null> {
-  return await requireRole(request, UserRole.ADMIN);
+export async function requireAdmin(request: Request, ipAddress: string): Promise<SecureSession | null> {
+  return await requireRole(request, UserRole.ADMIN, ipAddress);
 }
 
 // Middleware response helpers
@@ -122,8 +114,8 @@ export class RoleMiddleware {
       [UserRole.ADMIN]: '/admin',
       [UserRole.REQUESTOR]: '/requestor',
       [UserRole.DAO]: '/dashboard/dao',
-      [UserRole.APPROVER]: '/dashboard/approver',
-      [UserRole.CPSO]: '/dashboard/cpso',
+      [UserRole.APPROVER]: '/approver',
+      [UserRole.CPSO]: '/approver',  // CPSO uses approver interface
       [UserRole.DTA]: '/dashboard/dta',
       [UserRole.SME]: '/dashboard/sme',
       [UserRole.MEDIA_CUSTODIAN]: '/media-custodian'
@@ -135,10 +127,11 @@ export class RoleMiddleware {
   // Comprehensive auth check with proper redirects
   static async checkAuthAndRole(
     request: Request, 
+    ipAddress: string,
     requiredRole?: UserRoleType
   ): Promise<{ session: SecureSession; response?: Response }> {
     // First check basic authentication
-    const session = await requireAuth(request);
+    const session = await requireAuth(request, ipAddress);
     
     if (!session) {
       return { session: null as any, response: this.redirectToLogin() };

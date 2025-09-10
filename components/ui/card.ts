@@ -139,7 +139,7 @@ export interface StatusCardProps extends Omit<CardProps, 'children'> {
   items: Array<{
     label: string;
     value: string;
-    status?: 'operational' | 'secure' | 'low-threat' | 'attention' | 'warning' | 'error';
+    status?: 'operational' | 'secure' | 'low-threat' | 'attention' | 'warning' | 'error' | 'info';
   }>;
   actions?: string; // HTML for action buttons
 }
@@ -188,7 +188,8 @@ function getStatusClass(status: string): string {
     'low-threat': 'text-[var(--success)]',
     attention: 'text-[var(--warning)]',
     warning: 'text-[var(--warning)]',
-    error: 'text-[var(--destructive)]'
+    error: 'text-[var(--destructive)]',
+    info: 'text-[var(--info)]'
   };
   return statusClasses[status as keyof typeof statusClasses] || '';
 }

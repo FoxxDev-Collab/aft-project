@@ -1,5 +1,6 @@
 // Timeline Components for AFT Request Tracking
 // Provides visual timeline representation of request workflow states
+import { EditIcon, UserIcon, SearchIcon, ShieldIcon, CheckCircleIcon, XCircleIcon, PackageIcon, TrashIcon } from '../icons';
 
 export interface TimelineStep {
   id: string;
@@ -187,29 +188,29 @@ export function TimelineStatusBadge(
   };
 
   const statusIcons = {
-    draft: '📝',
-    submitted: '📤',
-    pending_dao: '👤',
-    pending_approver: '🔍',
-    pending_cpso: '🛡️',
-    approved: '✅',
-    rejected: '❌',
-    pending_dta: '🔄',
-    active_transfer: '📡',
-    pending_sme_signature: '✍️',
-    pending_sme: '🔬',
-    pending_media_custodian: '💾',
-    completed: '🎉',
-    disposed: '🗑️',
-    cancelled: '⛔'
+    draft: EditIcon({ size: 14 }),
+    submitted: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>`,
+    pending_dao: UserIcon({ size: 14 }),
+    pending_approver: SearchIcon({ size: 14 }),
+    pending_cpso: ShieldIcon({ size: 14 }),
+    approved: CheckCircleIcon({ size: 14 }),
+    rejected: XCircleIcon({ size: 14 }),
+    pending_dta: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`,
+    active_transfer: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 18l6-6"/><path d="M13 6l6 6"/></svg>`,
+    pending_sme_signature: EditIcon({ size: 14 }),
+    pending_sme: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m4.22-13.22l4.24 4.24M18.36 5.64l4.24 4.24"/></svg>`,
+    pending_media_custodian: PackageIcon({ size: 14 }),
+    completed: CheckCircleIcon({ size: 14 }),
+    disposed: TrashIcon({ size: 14 }),
+    cancelled: XCircleIcon({ size: 14 })
   };
 
-  const icon = statusIcons[status.toLowerCase() as keyof typeof statusIcons] || '●';
+  const icon = statusIcons[status.toLowerCase() as keyof typeof statusIcons] || `<div class="w-3 h-3 rounded-full bg-current"></div>`;
   const classes = `${baseClasses} ${variantClasses[variant || 'default']}`;
   
   return `
     <span class="${classes}" title="${status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}">
-      <span class="timeline-badge-icon">${icon}</span>
+      <span class="timeline-badge-icon inline-flex items-center justify-center">${icon}</span>
       <span class="timeline-badge-text">${status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
       ${showProgress && progressData ? `
         <span class="timeline-badge-progress">

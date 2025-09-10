@@ -2,17 +2,15 @@
 import { getDb, UserRole, getRoleDisplayName, getRoleDescription } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
 import { RoleMiddleware } from "../../middleware/role-middleware";
-import { getClientIP } from "../utils";
 
 const db = getDb();
 
-export async function handleAdminAPI(request: Request, path: string): Promise<Response | null> {
+export async function handleAdminAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   const method = request.method;
-  const ipAddress = getClientIP(request);
   
   // Admin stats API
   if (path === '/api/admin/stats' && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     const userCount = db.query("SELECT COUNT(*) as count FROM users WHERE is_active = 1").get() as any;
@@ -34,7 +32,7 @@ export async function handleAdminAPI(request: Request, path: string): Promise<Re
   
   // Security audit API
   if (path === '/api/security/audit' && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     const logs = db.query(`
@@ -55,7 +53,7 @@ export async function handleAdminAPI(request: Request, path: string): Promise<Re
   
   // User Management APIs
   if (path === '/api/admin/users' && method === 'POST') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     try {
@@ -104,7 +102,7 @@ export async function handleAdminAPI(request: Request, path: string): Promise<Re
   }
   
   if (path.startsWith('/api/admin/users/') && path.endsWith('/roles') && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     const userId = path.split('/')[4];
@@ -147,7 +145,7 @@ export async function handleAdminAPI(request: Request, path: string): Promise<Re
   }
   
   if (path.startsWith('/api/admin/users/') && path.endsWith('/roles') && method === 'PUT') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     const userId = path.split('/')[4];
@@ -191,7 +189,7 @@ export async function handleAdminAPI(request: Request, path: string): Promise<Re
   }
   
   if (path.startsWith('/api/admin/users/') && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     const userId = path.split('/')[4];
@@ -216,7 +214,7 @@ export async function handleAdminAPI(request: Request, path: string): Promise<Re
   }
   
   if (path.startsWith('/api/admin/users/') && method === 'PUT') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
     if (authResult.response) return authResult.response;
     
     try {

@@ -159,7 +159,7 @@ export class Templates {
     description: string;
     primaryAction: { label: string; onClick: string };
     secondaryAction?: { label: string; onClick: string };
-    status?: { label: string; value: string; status: 'operational' | 'warning' | 'error' };
+    status?: { label: string; value: string; status: 'operational' | 'warning' | 'error' | 'info' };
   }): string {
     const actions = [
       ComponentBuilder.primaryButton({

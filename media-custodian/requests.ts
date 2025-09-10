@@ -149,112 +149,31 @@ export class MediaCustodianRequests {
       compact: false
     });
 
-    // Build filter controls
-    const filterControls = this.buildFilterControls();
-
     // Build statistics cards
     const statsCards = this.buildStatsCards(totalRequests?.count || 0, pendingRequests?.count || 0, tableData);
 
-    return `
-      ${MediaCustodianNavigation.renderPageHeader('All Requests', 'Manage and oversee all AFT requests', user, '/media-custodian/requests')}
-      
-      <div class="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
+    const tableContainer = ComponentBuilder.tableContainer({
+        title: 'All Requests',
+        description: 'Monitor and process all Assured File Transfer requests.',
+        table
+    });
+
+    const content = `
         <div class="space-y-6">
-          ${ComponentBuilder.sectionHeader({
-            title: 'Request Management',
-            description: 'Monitor and process all Assured File Transfer requests'
-          })}
-          
           ${statsCards}
-          
-          ${filterControls}
-          
-          <div class="bg-[var(--card)] rounded-lg border border-[var(--border)]">
-            <div class="p-6 border-b border-[var(--border)]">
-              <div class="flex justify-between items-center">
-                <h3 class="text-lg font-semibold text-[var(--foreground)]">All Requests</h3>
-                <div class="flex items-center space-x-2">
-                  <button
-                    onclick="toggleViewMode('table')"
-                    id="table-view-btn"
-                    class="px-3 py-2 text-sm font-medium rounded-md transition-colors bg-[var(--primary)] text-[var(--primary-foreground)]"
-                  >
-                    Table View
-                  </button>
-                  <button
-                    onclick="toggleViewMode('timeline')"
-                    id="timeline-view-btn"
-                    class="px-3 py-2 text-sm font-medium rounded-md transition-colors text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
-                  >
-                    Timeline View
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div id="requests-content">
-              ${table}
-            </div>
-          </div>
+          ${tableContainer}
         </div>
-      </div>
     `;
+
+    return MediaCustodianNavigation.renderLayout(
+        'All Requests',
+        'Manage and oversee all AFT requests',
+        user,
+        '/media-custodian/requests',
+        content
+    );
   }
 
-  private static buildFilterControls(): string {
-    return `
-      <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-        <div class="flex flex-wrap items-center gap-4">
-          <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium text-[var(--foreground)]">Status:</label>
-            <select id="status-filter" class="px-3 py-1 text-sm border border-[var(--border)] rounded-md bg-[var(--background)]">
-              <option value="">All Statuses</option>
-              <option value="submitted">Submitted</option>
-              <option value="pending_dao">Pending DAO</option>
-              <option value="pending_approver">Pending Approver</option>
-              <option value="pending_cpso">Pending CPSO</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-          
-          <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium text-[var(--foreground)]">Classification:</label>
-            <select id="classification-filter" class="px-3 py-1 text-sm border border-[var(--border)] rounded-md bg-[var(--background)]">
-              <option value="">All Classifications</option>
-              <option value="UNCLASSIFIED">UNCLASSIFIED</option>
-              <option value="CUI">CUI</option>
-              <option value="CONFIDENTIAL">CONFIDENTIAL</option>
-              <option value="SECRET">SECRET</option>
-              <option value="TOP SECRET">TOP SECRET</option>
-            </select>
-          </div>
-          
-          <div class="flex items-center space-x-2">
-            <input
-              type="text"
-              id="search-input"
-              placeholder="Search requests..."
-              class="px-3 py-1 text-sm border border-[var(--border)] rounded-md bg-[var(--background)]"
-            />
-            <button
-              onclick="applyFilters()"
-              class="px-4 py-1 text-sm font-medium bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90"
-            >
-              Filter
-            </button>
-            <button
-              onclick="clearFilters()"
-              class="px-4 py-1 text-sm font-medium text-[var(--muted-foreground)] border border-[var(--border)] rounded-md hover:bg-[var(--muted)]"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
 
   private static buildStatsCards(total: number, pending: number, requests: any[]): string {
     const approved = requests.filter(r => r.status === 'approved').length;
@@ -291,7 +210,7 @@ export class MediaCustodianRequests {
     
     // Get request details
     const request = db.query(`
-      SELECT r.*, u.email as requestor_email, u.name as requestor_name
+      SELECT r.*, u.email as requestor_email, u.first_name || ' ' || u.last_name as requestor_name
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
       WHERE r.id = ?

@@ -1,13 +1,13 @@
 // Admin Requests Management Interface
 import { ComponentBuilder } from "../components/ui/server-components";
 import { getDb } from "../lib/database-bun";
-import { AdminNavigation, type AdminUser } from "./admin-nav";
+import { DTANavigation, type DTAUser } from "./dta-nav";
 import { RequestTrackingService } from "../lib/request-tracking";
 import { AFT_STATUS_LABELS } from "../lib/database-bun";
 
-export class AdminRequests {
+export class DtaRequests {
   
-  static async renderRequestsPage(user: AdminUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
+  static async renderRequestsPage(user: DTAUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
     const db = getDb();
     
     // Get request statistics
@@ -121,11 +121,21 @@ export class AdminRequests {
       {
         key: 'actions',
         label: 'Actions',
-        render: (value: any, row: any) => ComponentBuilder.tableCellActions([
-          { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
-          { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' },
-          { label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' }
-        ])
+        render: (value: any, row: any) => {
+          const actions: Array<{ label: string; onClick: string; variant: 'primary' | 'secondary' | 'destructive' }> = [
+            { label: 'View', onClick: `viewDTARequest(${row.id})`, variant: 'secondary' },
+            { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' }
+          ];
+          
+          // Add DTA-specific actions based on status
+          if (row.status === 'pending_dta') {
+            actions.push({ label: 'Activate Transfer', onClick: `activateTransfer(${row.id})`, variant: 'primary' });
+          } else if (row.status === 'active_transfer') {
+            actions.push({ label: 'Manage Transfer', onClick: `manageTransfer(${row.id})`, variant: 'primary' });
+          }
+          
+          return ComponentBuilder.tableCellActions(actions);
+        }
       }
     ];
 
@@ -230,11 +240,11 @@ export class AdminRequests {
       </div>
     `;
 
-    return AdminNavigation.renderLayout(
+    return DTANavigation.renderLayout(
       'Request Management',
       'Manage AFT requests and approvals',
       user,
-      '/admin/requests',
+      '/dta/requests',
       content
     );
   }
@@ -304,9 +314,60 @@ export class AdminRequests {
         alert('Request creation form not yet implemented. This would navigate to /requests/new');
       }
       
-      function viewRequest(requestId) {
-        // Navigate to request details page (to be implemented)
-        alert('Request details view not yet implemented. This would show details for request ID: ' + requestId);
+      function viewDTARequest(requestId) {
+        // Fetch request details and show DTA review modal
+        fetch(\`/api/dta/requests/\${requestId}\`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showDTARequestModal(data.request);
+            } else {
+              alert('Failed to load request details: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error fetching request:', error);
+            alert('Failed to load request details. Please try again.');
+          });
+      }
+      
+      function activateTransfer(requestId) {
+        if (confirm('Are you sure you want to activate this transfer? This will move the request to active transfer status and begin Section 4 procedures.')) {
+          fetch(\`/api/dta/requests/\${requestId}/activate\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert('Transfer activated successfully! The request is now in active transfer status.');
+              window.location.reload();
+            } else {
+              alert('Failed to activate transfer: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error activating transfer:', error);
+            alert('Failed to activate transfer. Please try again.');
+          });
+        }
+      }
+      
+      function manageTransfer(requestId) {
+        // Show transfer management modal with Section 4 controls
+        fetch(\`/api/dta/requests/\${requestId}/transfer-status\`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showTransferManagementModal(data.request, data.transferStatus);
+            } else {
+              alert('Failed to load transfer status: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error fetching transfer status:', error);
+            alert('Failed to load transfer status. Please try again.');
+          });
       }
       
       function viewTimeline(requestId) {
@@ -501,6 +562,268 @@ export class AdminRequests {
             }
           }
         });
+      }
+      
+      function showDTARequestModal(request) {
+        const modalBackdrop = document.createElement('div');
+        modalBackdrop.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modalBackdrop.onclick = (e) => {
+          if (e.target === modalBackdrop) {
+            document.body.removeChild(modalBackdrop);
+          }
+        };
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'bg-[var(--background)] rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto';
+        
+        modalContent.innerHTML = \`
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+              <div>
+                <h2 class="text-2xl font-bold text-[var(--foreground)]">DTA Request Review</h2>
+                <p class="text-[var(--muted-foreground)]">Request #\${request.request_number}</p>
+              </div>
+              <button onclick="this.closest('.fixed').remove()" class="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-2xl font-bold">&times;</button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div class="space-y-4">
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Requestor</label>
+                  <div class="text-[var(--foreground)]">\${request.requestor_name}</div>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Transfer Type</label>
+                  <div class="text-[var(--foreground)]">\${request.transfer_type || 'Unknown'}</div>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Classification</label>
+                  <div class="text-[var(--foreground)]">\${request.classification || 'Unknown'}</div>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Status</label>
+                  <div class="text-[var(--foreground)]">\${request.status.replace('_', ' ').toUpperCase()}</div>
+                </div>
+              </div>
+              <div class="space-y-4">
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Created</label>
+                  <div class="text-[var(--foreground)]">\${new Date(request.created_at * 1000).toLocaleString()}</div>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">File Count</label>
+                  <div class="text-[var(--foreground)]">\${request.file_count || 'Unknown'}</div>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Total Size</label>
+                  <div class="text-[var(--foreground)]">\${request.total_size || 'Unknown'}</div>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Justification</label>
+                  <div class="text-[var(--foreground)] text-sm">\${request.justification || 'No justification provided'}</div>
+                </div>
+              </div>
+            </div>
+            
+            \${request.status === 'pending_dta' ? \`
+              <div class="bg-[var(--muted)] p-4 rounded-lg mb-6">
+                <h3 class="font-medium text-[var(--foreground)] mb-2">DTA Action Required</h3>
+                <p class="text-sm text-[var(--muted-foreground)] mb-4">This request is ready for Data Transfer Administrator review and activation.</p>
+                <button onclick="activateTransfer(\${request.id}); this.closest('.fixed').remove();" 
+                        class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 text-[var(--primary-foreground)] px-4 py-2 rounded-md font-medium">
+                  Activate Transfer
+                </button>
+              </div>
+            \` : request.status === 'active_transfer' ? \`
+              <div class="bg-[var(--info)]/10 border border-[var(--info)]/20 p-4 rounded-lg mb-6">
+                <h3 class="font-medium text-[var(--foreground)] mb-2">Active Transfer</h3>
+                <p class="text-sm text-[var(--muted-foreground)] mb-4">This transfer is currently active. Section 4 procedures are in progress.</p>
+                <button onclick="manageTransfer(\${request.id}); this.closest('.fixed').remove();" 
+                        class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 text-[var(--primary-foreground)] px-4 py-2 rounded-md font-medium">
+                  Manage Transfer
+                </button>
+              </div>
+            \` : ''}
+            
+            <div class="flex justify-end gap-2">
+              <button onclick="this.closest('.fixed').remove()" 
+                      class="px-4 py-2 border border-[var(--border)] rounded-md text-[var(--foreground)] hover:bg-[var(--muted)]">
+                Close
+              </button>
+            </div>
+          </div>
+        \`;
+        
+        modalBackdrop.appendChild(modalContent);
+        document.body.appendChild(modalBackdrop);
+      }
+      
+      function showTransferManagementModal(request, transferStatus) {
+        const modalBackdrop = document.createElement('div');
+        modalBackdrop.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modalBackdrop.onclick = (e) => {
+          if (e.target === modalBackdrop) {
+            document.body.removeChild(modalBackdrop);
+          }
+        };
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'bg-[var(--background)] rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto';
+        
+        modalContent.innerHTML = \`
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+              <div>
+                <h2 class="text-2xl font-bold text-[var(--foreground)]">Transfer Management</h2>
+                <p class="text-[var(--muted-foreground)]">Request #\${request.request_number} - Section 4 Procedures</p>
+              </div>
+              <button onclick="this.closest('.fixed').remove()" class="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-2xl font-bold">&times;</button>
+            </div>
+            
+            <div class="space-y-6">
+              <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+                <h3 class="font-medium text-[var(--foreground)] mb-4">Section 4: Anti-Virus Scanning</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Origination Scan</label>
+                    <div class="flex items-center gap-2 mt-1">
+                      <span class="\${transferStatus.origination_scan_performed ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}">
+                        \${transferStatus.origination_scan_performed ? '✓ Completed' : '○ Pending'}
+                      </span>
+                      \${!transferStatus.origination_scan_performed ? \`
+                        <button onclick="recordScan(\${request.id}, 'origination')" 
+                                class="text-xs bg-[var(--primary)] text-[var(--primary-foreground)] px-2 py-1 rounded">
+                          Record Scan
+                        </button>
+                      \` : ''}
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Destination Scan</label>
+                    <div class="flex items-center gap-2 mt-1">
+                      <span class="\${transferStatus.destination_scan_performed ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}">
+                        \${transferStatus.destination_scan_performed ? '✓ Completed' : '○ Pending'}
+                      </span>
+                      \${!transferStatus.destination_scan_performed ? \`
+                        <button onclick="recordScan(\${request.id}, 'destination')" 
+                                class="text-xs bg-[var(--primary)] text-[var(--primary-foreground)] px-2 py-1 rounded">
+                          Record Scan
+                        </button>
+                      \` : ''}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+                <h3 class="font-medium text-[var(--foreground)] mb-4">Transfer Completion</h3>
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Transfer Status</label>
+                    <div class="text-[var(--foreground)]">\${transferStatus.transfer_completed ? 'Completed' : 'In Progress'}</div>
+                  </div>
+                  \${transferStatus.origination_scan_performed && transferStatus.destination_scan_performed && !transferStatus.transfer_completed ? \`
+                    <button onclick="completeTransfer(\${request.id})" 
+                            class="bg-[var(--success)] text-white px-4 py-2 rounded-md font-medium">
+                      Mark Transfer Complete
+                    </button>
+                  \` : ''}
+                </div>
+              </div>
+              
+              <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+                <h3 class="font-medium text-[var(--foreground)] mb-4">DTA Signature</h3>
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-sm font-medium text-[var(--muted-foreground)]">DTA Approval</label>
+                    <div class="text-[var(--foreground)]">\${transferStatus.dta_signature ? 'Signed' : 'Pending'}</div>
+                  </div>
+                  \${transferStatus.transfer_completed && !transferStatus.dta_signature ? \`
+                    <button onclick="signDTA(\${request.id})" 
+                            class="bg-[var(--primary)] text-[var(--primary-foreground)] px-4 py-2 rounded-md font-medium">
+                      Sign as DTA
+                    </button>
+                  \` : ''}
+                </div>
+              </div>
+            </div>
+            
+            <div class="flex justify-end gap-2 mt-6">
+              <button onclick="this.closest('.fixed').remove()" 
+                      class="px-4 py-2 border border-[var(--border)] rounded-md text-[var(--foreground)] hover:bg-[var(--muted)]">
+                Close
+              </button>
+            </div>
+          </div>
+        \`;
+        
+        modalBackdrop.appendChild(modalContent);
+        document.body.appendChild(modalBackdrop);
+      }
+      
+      function recordScan(requestId, scanType) {
+        fetch(\`/api/dta/requests/\${requestId}/scan\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scanType })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            alert(\`\${scanType.charAt(0).toUpperCase() + scanType.slice(1)} scan recorded successfully!\`);
+            window.location.reload();
+          } else {
+            alert('Failed to record scan: ' + data.error);
+          }
+        })
+        .catch(error => {
+          console.error('Error recording scan:', error);
+          alert('Failed to record scan. Please try again.');
+        });
+      }
+      
+      function completeTransfer(requestId) {
+        if (confirm('Are you sure you want to mark this transfer as complete?')) {
+          fetch(\`/api/dta/requests/\${requestId}/complete\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert('Transfer marked as complete successfully!');
+              window.location.reload();
+            } else {
+              alert('Failed to complete transfer: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error completing transfer:', error);
+            alert('Failed to complete transfer. Please try again.');
+          });
+        }
+      }
+      
+      function signDTA(requestId) {
+        if (confirm('Are you sure you want to sign this request as DTA? This will move the request to SME signature for TPI.')) {
+          fetch(\`/api/dta/requests/\${requestId}/sign\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert('DTA signature recorded! The request will now proceed to SME signature for Two-Person Integrity.');
+              window.location.reload();
+            } else {
+              alert('Failed to record DTA signature: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error recording DTA signature:', error);
+            alert('Failed to record DTA signature. Please try again.');
+          });
+        }
       }
     `;
   }

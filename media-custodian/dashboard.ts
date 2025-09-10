@@ -63,10 +63,7 @@ export class MediaCustodianDashboard {
       { label: 'Processing Rate', value: this.getProcessingRate(allRequests?.count || 0, pendingRequests?.count || 0), status: 'operational' }
     ]);
 
-    return `
-      ${MediaCustodianNavigation.renderPageHeader('Dashboard', 'Media Custodian Control Center', user, '/media-custodian')}
-      
-      <div class="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
+    const content = `
         <div class="space-y-8">
           ${ComponentBuilder.sectionHeader({
             title: 'Media Management',
@@ -90,8 +87,15 @@ export class MediaCustodianDashboard {
             ${recentRequestsTable}
           </div>
         </div>
-      </div>
     `;
+
+    return MediaCustodianNavigation.renderLayout(
+      'Dashboard',
+      'Media Custodian Control Center',
+      user,
+      '/media-custodian',
+      content
+    );
   }
 
   private static buildRecentRequestsTable(requests: any[]): string {

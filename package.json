@@ -11,7 +11,7 @@
     "fmt": "bun fmt"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "^1.2.21"
   },
   "peerDependencies": {
     "typescript": "^5"

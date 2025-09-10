@@ -1,4 +1,6 @@
-// Login Page - Secure authentication interface
+// Login Page - Simple authentication interface
+import { LogInIcon } from "../components/icons";
+
 export class LoginPage {
   static render(): string {
     return `
@@ -11,46 +13,53 @@ export class LoginPage {
     <link rel="stylesheet" href="/globals.css">
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-box">
-            <div class="login-header">
-                <h1>Assured File Transfer</h1>
-                <p>Secure Data Transfer System</p>
-            </div>
-            
-            <form id="loginForm">
-                <div class="form-group">
-                    <label for="email">Email:</label>
-                    <input type="email" id="email" name="email" required placeholder="Enter your email">
-                </div>
-                
-                <div class="form-group">
-                    <label for="password">Password:</label>
-                    <input type="password" id="password" name="password" required placeholder="Enter your password">
-                </div>
-                
-                <button type="submit" class="login-btn">Login</button>
-                
-                <div id="error-message" class="error-message" style="display: none;"></div>
-            </form>
-            
-            <div class="system-info">
-                <h3 style="color: var(--primary); margin-bottom: 12px; font-size: 14px;">Test Accounts:</h3>
-                <p><strong>Admin:</strong> admin@aft.gov / admin123</p>
-                <p><strong>DAO:</strong> dao@aft.gov / password123</p>
-                <p><strong>Approver:</strong> issm@aft.gov / password123</p>
-                <p><strong>DTA:</strong> dta@aft.gov / password123</p>
-            </div>
+    <div class="page-wrapper-centered">
+    <div class="login-box">
+        <div class="login-header">
+            <h1>Assured File Transfer</h1>
+            <p>Secure Data Transfer System</p>
         </div>
+        
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" placeholder="admin@aft.gov" autocomplete="email">
+            <div id="email-error" class="error-message hidden" style="font-size: 0.8rem; text-align: left; margin-top: 4px;"></div>
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        
+        <button type="button" id="loginBtn" class="login-btn">
+            Login
+        </button>
+        
+        <div id="error" class="error-message hidden"></div>
     </div>
+</div>
     
     <script>
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('loginBtn');
+        const errorDiv = document.getElementById('error');
+        const emailErrorDiv = document.getElementById('email-error');
+        let emailDebounceTimer;
+        
+        async function handleLogin() {
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
             
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const errorDiv = document.getElementById('error-message');
+            if (!email || !password) {
+                errorDiv.textContent = 'Please enter email and password';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            
+            errorDiv.classList.add('hidden');
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging in...';
             
             try {
                 const response = await fetch('/api/login', {
@@ -64,19 +73,69 @@ export class LoginPage {
                 if (result.success) {
                     window.location.href = '/dashboard';
                 } else {
-                    errorDiv.textContent = result.message || 'Login failed';
-                    errorDiv.style.display = 'block';
-                    
-                    // Show remaining attempts if provided
-                    if (result.remainingAttempts !== undefined) {
-                        errorDiv.textContent += \` (\${result.remainingAttempts} attempts remaining)\`;
-                    }
+                    errorDiv.textContent = result.message || 'Invalid credentials';
+                    errorDiv.classList.remove('hidden');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Login';
                 }
             } catch (error) {
                 errorDiv.textContent = 'Network error. Please try again.';
-                errorDiv.style.display = 'block';
+                errorDiv.classList.remove('hidden');
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login';
             }
+        }
+        
+        loginBtn.addEventListener('click', handleLogin);
+        
+        // Allow Enter key to submit
+        emailInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleLogin();
         });
+        
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
+        
+        async function validateEmail() {
+            const email = emailInput.value.trim();
+            
+            if (email.length < 3 || !email.includes('@')) {
+                emailErrorDiv.classList.add('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/check-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                if (!response.ok) return;
+
+                const result = await response.json();
+                
+                if (!result.exists) {
+                    emailErrorDiv.textContent = 'Email address not found.';
+                    emailErrorDiv.classList.remove('hidden');
+                } else {
+                    emailErrorDiv.classList.add('hidden');
+                }
+            } catch (error) {
+                emailErrorDiv.classList.add('hidden');
+            }
+        }
+
+        emailInput.addEventListener('input', () => {
+            clearTimeout(emailDebounceTimer);
+            emailDebounceTimer = setTimeout(() => {
+                validateEmail();
+            }, 500);
+        });
+
+        // Focus email input on load
+        emailInput.focus();
     </script>
 </body>
 </html>`;

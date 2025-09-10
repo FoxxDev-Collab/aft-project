@@ -9,8 +9,8 @@ import { checkAuth } from "../utils";
 const db = getDb();
 
 // Login Page Handler
-export async function handleLoginPage(request: Request): Promise<Response> {
-  const auth = await checkAuth(request);
+export async function handleLoginPage(request: Request, ipAddress: string): Promise<Response> {
+  const auth = await checkAuth(request, ipAddress);
   if (auth) {
     if (auth.roleSelected) {
       return Response.redirect(RoleMiddleware.getRoleDashboardUrl(auth.activeRole as any), 302);
@@ -25,8 +25,8 @@ export async function handleLoginPage(request: Request): Promise<Response> {
 }
 
 // Role Selection Page Handler
-export async function handleRoleSelectionPage(request: Request): Promise<Response> {
-  const auth = await checkAuth(request);
+export async function handleRoleSelectionPage(request: Request, ipAddress: string): Promise<Response> {
+  const auth = await checkAuth(request, ipAddress);
   if (!auth) {
     return Response.redirect("/login", 302);
   }
@@ -54,8 +54,8 @@ export async function handleRoleSelectionPage(request: Request): Promise<Respons
 }
 
 // Dashboard Routes Handler
-export async function handleDashboardRoutes(request: Request): Promise<Response> {
-  const authResult = await RoleMiddleware.checkAuthAndRole(request);
+export async function handleDashboardRoutes(request: Request, ipAddress: string): Promise<Response> {
+  const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress);
   if (authResult.response) return authResult.response;
   
   // Redirect to role-specific dashboard

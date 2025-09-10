@@ -2,24 +2,23 @@
 import { getDb, UserRole, generateRequestNumber } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
 import { RoleMiddleware } from "../../middleware/role-middleware";
-import { getClientIP } from "../utils";
 
 const db = getDb();
 
-export async function handleRequestorAPI(request: Request, path: string): Promise<Response | null> {
+export async function handleRequestorAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   const method = request.method;
-  const ipAddress = getClientIP(request);
   
-  // List available DTAs (users with DTA role)
+  // List available DTAs (users with DTA role who have available drives)
   if (path === '/api/requestor/dtas' && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.REQUESTOR);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
     if (authResult.response) return authResult.response;
     try {
       const dtas = db.query(`
-        SELECT u.id, u.email, u.first_name, u.last_name
+        SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
         FROM users u
         JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
-        WHERE u.is_active = 1 AND ur.role = ?
+        JOIN media_drives md ON md.issued_to_user_id = u.id
+        WHERE u.is_active = 1 AND ur.role = ? AND md.status = 'issued'
         ORDER BY u.last_name, u.first_name
       `).all(UserRole.DTA) as any[];
       return new Response(JSON.stringify(dtas), { headers: { 'Content-Type': 'application/json' } });
@@ -30,7 +29,7 @@ export async function handleRequestorAPI(request: Request, path: string): Promis
 
   // Check if a given DTA has an issued drive
   if (path.startsWith('/api/requestor/dta/') && path.endsWith('/issued-drive') && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.REQUESTOR);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
     if (authResult.response) return authResult.response;
     try {
       const segments = path.split('/');
@@ -54,7 +53,7 @@ export async function handleRequestorAPI(request: Request, path: string): Promis
 
   // Requestor save draft API
   if (path === '/api/requestor/save-draft' && method === 'POST') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.REQUESTOR);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
     if (authResult.response) return authResult.response;
     
     try {
@@ -206,7 +205,7 @@ export async function handleRequestorAPI(request: Request, path: string): Promis
 
   // Requestor submit request API
   if (path === '/api/requestor/submit-request' && method === 'POST') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.REQUESTOR);
+    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
     if (authResult.response) return authResult.response;
     
     try {

@@ -57,74 +57,70 @@ export class AdminSystem {
       </div>
     `).join('');
 
-    return `
-      ${AdminNavigation.renderPageHeader('System Settings', 'Configure system parameters and maintenance', user, '/admin/system')}
-      
-      <div class="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
-        <div class="space-y-8">
-          <!-- System Information -->
-          <div>
-            <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">System Information</h2>
-            <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
-              <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div>
-                  <div class="text-sm font-medium text-[var(--muted-foreground)]">Version</div>
-                  <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.version}</div>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-[var(--muted-foreground)]">Runtime</div>
-                  <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.runtime}</div>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-[var(--muted-foreground)]">Platform</div>
-                  <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.platform}</div>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-[var(--muted-foreground)]">Uptime</div>
-                  <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.uptime}</div>
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-[var(--muted-foreground)]">Environment</div>
-                  <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.nodeEnv}</div>
-                </div>
+    const content = `
+      <div class="space-y-8">
+        <!-- System Information -->
+        <div>
+          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">System Information</h2>
+          <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Version</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.version}</div>
+              </div>
+              <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Runtime</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.runtime}</div>
+              </div>
+              <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Platform</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.platform}</div>
+              </div>
+              <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Uptime</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.uptime}</div>
+              </div>
+              <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Environment</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.nodeEnv}</div>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Configuration Cards -->
-          <div>
-            <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">System Configuration</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              ${configCardsHtml}
-            </div>
+        <!-- Configuration Cards -->
+        <div>
+          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">System Configuration</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ${configCardsHtml}
           </div>
+        </div>
 
-          <!-- System Actions -->
-          <div>
-            <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">System Actions</h2>
-            <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
-              <div class="flex flex-wrap gap-4">
-                ${ComponentBuilder.secondaryButton({
-                  children: 'Clear Cache',
-                  onClick: 'clearSystemCache()',
-                  size: 'md'
-                })}
-                ${ComponentBuilder.secondaryButton({
-                  children: 'Export Logs',
-                  onClick: 'exportSystemLogs()',
-                  size: 'md'
-                })}
-                ${ComponentBuilder.secondaryButton({
-                  children: 'System Health Check',
-                  onClick: 'runHealthCheck()',
-                  size: 'md'
-                })}
-                ${ComponentBuilder.destructiveButton({
-                  children: 'Restart System',
-                  onClick: 'confirmSystemRestart()',
-                  size: 'md'
-                })}
-              </div>
+        <!-- System Actions -->
+        <div>
+          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">System Actions</h2>
+          <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
+            <div class="flex flex-wrap gap-4">
+              ${ComponentBuilder.secondaryButton({
+                children: 'Clear Cache',
+                onClick: 'clearSystemCache()',
+                size: 'md'
+              })}
+              ${ComponentBuilder.secondaryButton({
+                children: 'Export Logs',
+                onClick: 'exportSystemLogs()',
+                size: 'md'
+              })}
+              ${ComponentBuilder.secondaryButton({
+                children: 'System Health Check',
+                onClick: 'runHealthCheck()',
+                size: 'md'
+              })}
+              ${ComponentBuilder.destructiveButton({
+                children: 'Restart System',
+                onClick: 'confirmSystemRestart()',
+                size: 'md'
+              })}
             </div>
           </div>
         </div>
@@ -146,6 +142,14 @@ export class AdminSystem {
         </div>
       </div>
     `;
+
+    return AdminNavigation.renderLayout(
+      'System Settings',
+      'Configure system parameters and maintenance',
+      user,
+      '/admin/system',
+      content
+    );
   }
 
   static getScript(): string {

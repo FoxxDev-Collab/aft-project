@@ -64,35 +64,39 @@ export class RequestorDashboard {
       { label: 'Success Rate', value: this.getSuccessRate(myRequests?.count || 0, pendingRequests?.count || 0), status: 'operational' }
     ]);
 
-    return `
-      ${RequestorNavigation.renderPageHeader('Dashboard', 'Assured File Transfer Request Portal', user, '/requestor')}
-      
-      <div class="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
-        <div class="space-y-8">
-          ${ComponentBuilder.sectionHeader({
-            title: 'Request Management',
-            description: 'Submit and track your Assured File Transfer requests'
-          })}
-          
-          ${ComponentBuilder.grid({
-            cols: 2,
-            gap: 'lg',
-            responsive: true,
-            children: [newRequestCard, myRequestsCard, pendingCard, helpCard].join('')
-          })}
-          
-          <div>
-            <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">Your Statistics</h3>
-            ${statsCard}
-          </div>
-          
-          <div>
-            <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">Recent Requests</h3>
-            ${recentRequestsTable}
-          </div>
+    const content = `
+      <div class="space-y-8">
+        ${ComponentBuilder.sectionHeader({
+          title: 'Request Management',
+          description: 'Submit and track your Assured File Transfer requests'
+        })}
+        
+        ${ComponentBuilder.grid({
+          cols: 2,
+          gap: 'lg',
+          responsive: true,
+          children: [newRequestCard, myRequestsCard, pendingCard, helpCard].join('')
+        })}
+        
+        <div>
+          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">Your Statistics</h3>
+          ${statsCard}
+        </div>
+        
+        <div>
+          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">Recent Requests</h3>
+          ${recentRequestsTable}
         </div>
       </div>
     `;
+
+    return RequestorNavigation.renderLayout(
+      'Dashboard',
+      'Assured File Transfer Request Portal',
+      user,
+      '/requestor',
+      content
+    );
   }
 
   private static buildRecentRequestsTable(requests: any[]): string {

@@ -1,13 +1,13 @@
 // Admin Requests Management Interface
 import { ComponentBuilder } from "../components/ui/server-components";
 import { getDb } from "../lib/database-bun";
-import { AdminNavigation, type AdminUser } from "./admin-nav";
+import { SMENavigation, type SMEUser } from "./sme-nav";
 import { RequestTrackingService } from "../lib/request-tracking";
 import { AFT_STATUS_LABELS } from "../lib/database-bun";
 
-export class AdminRequests {
+export class SMERequests {
   
-  static async renderRequestsPage(user: AdminUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
+  static async renderRequestsPage(user: SMEUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
     const db = getDb();
     
     // Get request statistics
@@ -121,11 +121,19 @@ export class AdminRequests {
       {
         key: 'actions',
         label: 'Actions',
-        render: (value: any, row: any) => ComponentBuilder.tableCellActions([
-          { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
-          { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' },
-          { label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' }
-        ])
+        render: (value: any, row: any) => {
+          const actions: Array<{ label: string; onClick: string; variant: 'primary' | 'secondary' | 'destructive' }> = [
+            { label: 'View', onClick: `viewSMERequest(${row.id})`, variant: 'secondary' },
+            { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' }
+          ];
+
+          // Add SME-specific actions based on status
+          if (row.status === 'pending_sme_signature') {
+            actions.push({ label: 'Sign Request', onClick: `signRequest(${row.id})`, variant: 'primary' });
+          }
+          
+          return ComponentBuilder.tableCellActions(actions);
+        }
       }
     ];
 
@@ -230,11 +238,11 @@ export class AdminRequests {
       </div>
     `;
 
-    return AdminNavigation.renderLayout(
+    return SMENavigation.renderLayout(
       'Request Management',
       'Manage AFT requests and approvals',
       user,
-      '/admin/requests',
+      '/sme/requests',
       content
     );
   }
@@ -297,21 +305,48 @@ export class AdminRequests {
 
   static getScript(): string {
     return `
-      let currentView = 'table';
-      
-      function createRequest() {
-        // Navigate to request creation page (to be implemented)
-        alert('Request creation form not yet implemented. This would navigate to /requests/new');
+      function viewSMERequest(requestId) {
+        // Fetch request details and show SME review modal
+        fetch('/api/sme/requests/' + requestId)
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              showSMERequestModal(data.request);
+            } else {
+              alert('Failed to load request details: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error fetching request:', error);
+            alert('Failed to load request details. Please try again.');
+          });
       }
       
-      function viewRequest(requestId) {
-        // Navigate to request details page (to be implemented)
-        alert('Request details view not yet implemented. This would show details for request ID: ' + requestId);
+      function signRequest(requestId) {
+        if (confirm('Are you sure you want to sign this request? This action completes the Two-Person Integrity check.')) {
+          fetch('/api/sme/requests/' + requestId + '/sign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert('Request signed successfully!');
+              window.location.reload();
+            } else {
+              alert('Failed to sign request: ' + data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error signing request:', error);
+            alert('Failed to sign request. Please try again.');
+          });
+        }
       }
       
       function viewTimeline(requestId) {
         // Get timeline data for the specific request
-        fetch(\`/api/requests/\${requestId}/timeline\`)
+        fetch('/api/requests/' + requestId + '/timeline')
           .then(response => response.json())
           .then(data => {
             if (data.success) {
@@ -324,183 +359,6 @@ export class AdminRequests {
             console.error('Error fetching timeline:', error);
             alert('Failed to load timeline data. Please try again.');
           });
-      }
-      
-      function showTimelineModal(request, timelineData) {
-        // Create modal backdrop
-        const modalBackdrop = document.createElement('div');
-        modalBackdrop.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-        modalBackdrop.onclick = (e) => {
-          if (e.target === modalBackdrop) {
-            document.body.removeChild(modalBackdrop);
-          }
-        };
-        
-        // Create modal content
-        const modalContent = document.createElement('div');
-        modalContent.className = 'bg-[var(--background)] rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden';
-        
-        // Generate timeline HTML using existing components
-        const timelineHtml = \`
-          <div class="p-6">
-            <div class="flex items-center justify-between mb-6">
-              <div>
-                <h2 class="text-2xl font-bold text-[var(--foreground)]">Request Timeline</h2>
-                <p class="text-[var(--muted-foreground)]">Request #\${request.request_number}</p>
-              </div>
-              <button onclick="this.closest('.fixed').remove()" class="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-2xl font-bold">&times;</button>
-            </div>
-            
-            <div class="mb-6 p-4 bg-[var(--muted)] rounded-lg">
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span class="font-medium text-[var(--muted-foreground)]">Requestor:</span>
-                  <div class="text-[var(--foreground)]">\${request.requestor_name}</div>
-                </div>
-                <div>
-                  <span class="font-medium text-[var(--muted-foreground)]">Status:</span>
-                  <div class="text-[var(--foreground)]">\${request.status.replace('_', ' ').toUpperCase()}</div>
-                </div>
-                <div>
-                  <span class="font-medium text-[var(--muted-foreground)]">Transfer Type:</span>
-                  <div class="text-[var(--foreground)]">\${request.transfer_type || 'Unknown'}</div>
-                </div>
-                <div>
-                  <span class="font-medium text-[var(--muted-foreground)]">Created:</span>
-                  <div class="text-[var(--foreground)]">\${new Date(request.created_at * 1000).toLocaleDateString()}</div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="max-h-[60vh] overflow-y-auto">
-              <div class="space-y-4">
-                \${timelineData.timeline_steps.map((step, index) => \`
-                  <div class="flex items-start space-x-4 pb-4 \${index < timelineData.timeline_steps.length - 1 ? 'border-b border-[var(--border)]' : ''}">
-                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium \${getStepStatusClasses(step.status)}">
-                      \${getStepStatusIcon(step.status)}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between">
-                        <h4 class="text-sm font-medium text-[var(--foreground)]">\${step.title}</h4>
-                        \${step.timestamp ? \`<time class="text-xs text-[var(--muted-foreground)]">\${formatTimestamp(step.timestamp)}</time>\` : ''}
-                      </div>
-                      \${step.description ? \`<p class="text-sm text-[var(--muted-foreground)] mt-1">\${step.description}</p>\` : ''}
-                      \${step.assignedTo ? \`<p class="text-xs text-[var(--muted-foreground)] mt-1">Assigned to: \${step.assignedTo}</p>\` : ''}
-                      \${step.notes ? \`<p class="text-xs text-[var(--muted-foreground)] mt-2 p-2 bg-[var(--muted)] rounded">\${step.notes}</p>\` : ''}
-                    </div>
-                  </div>
-                \`).join('')}
-              </div>
-            </div>
-          </div>
-        \`;
-        
-        modalContent.innerHTML = timelineHtml;
-        modalBackdrop.appendChild(modalContent);
-        document.body.appendChild(modalBackdrop);
-      }
-      
-      function getStepStatusClasses(status) {
-        const classes = {
-          'completed': 'bg-[var(--success)] text-white',
-          'current': 'bg-[var(--primary)] text-white',
-          'pending': 'bg-[var(--muted)] text-[var(--muted-foreground)]',
-          'skipped': 'bg-[var(--warning)] text-white',
-          'error': 'bg-[var(--destructive)] text-white'
-        };
-        return classes[status] || classes.pending;
-      }
-      
-      function getStepStatusIcon(status) {
-        const icons = {
-          'completed': '✓',
-          'current': '●',
-          'pending': '○',
-          'skipped': '⊘',
-          'error': '✗'
-        };
-        return icons[status] || icons.pending;
-      }
-      
-      function formatTimestamp(timestamp) {
-        const date = new Date(timestamp * 1000);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
-        if (diffDays === 0) {
-          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } else if (diffDays === 1) {
-          return 'Yesterday at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } else if (diffDays < 7) {
-          return \`\${diffDays} days ago\`;
-        } else {
-          return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
-      }
-      
-      function editRequest(requestId) {
-        // Navigate to request edit page (to be implemented)
-        alert('Request editing not yet implemented. This would edit request ID: ' + requestId);
-      }
-      
-      function switchView(viewType) {
-        if (currentView === viewType) return;
-        
-        currentView = viewType;
-        const url = new URL(window.location);
-        url.searchParams.set('view', viewType);
-        window.location.href = url.toString();
-      }
-      
-      function exportRequests() {
-        alert('Export functionality not yet implemented.');
-      }
-      
-      function importRequests() {
-        alert('Import functionality not yet implemented.');
-      }
-      
-      function filterRequests(searchTerm) {
-        const rows = document.querySelectorAll('tbody tr');
-        const term = searchTerm.toLowerCase();
-        
-        rows.forEach(row => {
-          const text = row.textContent.toLowerCase();
-          row.style.display = text.includes(term) ? '' : 'none';
-        });
-      }
-      
-      function filterByStatus(status) {
-        const rows = document.querySelectorAll('tbody tr');
-        
-        rows.forEach(row => {
-          if (!status) {
-            row.style.display = '';
-          } else {
-            const statusCell = row.querySelector('td:nth-child(5)');
-            if (statusCell) {
-              const statusText = statusCell.textContent.toLowerCase();
-              row.style.display = statusText.includes(status.toLowerCase()) ? '' : 'none';
-            }
-          }
-        });
-      }
-      
-      function filterByType(type) {
-        const rows = document.querySelectorAll('tbody tr');
-        
-        rows.forEach(row => {
-          if (!type) {
-            row.style.display = '';
-          } else {
-            const typeCell = row.querySelector('td:nth-child(3)');
-            if (typeCell) {
-              const typeText = typeCell.textContent.toLowerCase();
-              row.style.display = typeText.includes(type.toLowerCase()) ? '' : 'none';
-            }
-          }
-        });
       }
     `;
   }

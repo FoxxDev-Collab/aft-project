@@ -1,7 +1,7 @@
 // Button component with variants following the design system
 
 export interface ButtonProps {
-  variant?: 'primary' | 'secondary' | 'warning' | 'destructive' | 'success';
+  variant?: 'primary' | 'secondary' | 'outline' | 'warning' | 'destructive' | 'success';
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   loading?: boolean;
@@ -56,6 +56,14 @@ export function Button({
       'hover:bg-[var(--muted)]',
       'focus:ring-[var(--secondary)]'
     ],
+    outline: [
+      'bg-transparent',
+      'text-[var(--foreground)]',
+      'border',
+      'border-[var(--border)]',
+      'hover:bg-[var(--muted)]',
+      'focus:ring-[var(--ring)]'
+    ],
     warning: [
       'bg-[var(--warning)]',
       'text-[var(--warning-foreground)]',
@@ -85,8 +93,8 @@ export function Button({
 
   const allClasses = [
     ...baseClasses,
-    ...variantClasses[variant],
-    ...sizeClasses[size],
+    ...(variantClasses[variant] || variantClasses.primary),
+    ...(sizeClasses[size] || sizeClasses.md),
     className
   ].filter(Boolean).join(' ');
 

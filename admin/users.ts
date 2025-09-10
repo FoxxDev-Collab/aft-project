@@ -142,31 +142,26 @@ export class AdminUsers {
       table
     });
 
-    return `
-      ${AdminNavigation.renderPageHeader('User Management', 'Manage system users and their roles', user, '/admin/users')}
-      
-      <div class="max-w-7xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
-        ${tableContainer}
+    const content = `
+      ${tableContainer}
 
-        
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
-          <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--primary)]">${users.length}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Total Users</div>
-          </div>
-          <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--success)]">${users.filter(u => u.is_active).length}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Active Users</div>
-          </div>
-          <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--warning)]">${users.filter(u => !u.is_active).length}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Inactive Users</div>
-          </div>
-          <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--info)]">${users.filter(u => u.role_count > 1).length}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Multi-Role Users</div>
-          </div>
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
+        <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+          <div class="text-2xl font-bold text-[var(--primary)]">${users.length}</div>
+          <div class="text-sm text-[var(--muted-foreground)]">Total Users</div>
+        </div>
+        <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+          <div class="text-2xl font-bold text-[var(--success)]">${users.filter(u => u.is_active).length}</div>
+          <div class="text-sm text-[var(--muted-foreground)]">Active Users</div>
+        </div>
+        <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+          <div class="text-2xl font-bold text-[var(--warning)]">${users.filter(u => !u.is_active).length}</div>
+          <div class="text-sm text-[var(--muted-foreground)]">Inactive Users</div>
+        </div>
+        <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+          <div class="text-2xl font-bold text-[var(--info)]">${users.filter(u => u.role_count > 1).length}</div>
+          <div class="text-sm text-[var(--muted-foreground)]">Multi-Role Users</div>
         </div>
       </div>
 
@@ -307,6 +302,14 @@ export class AdminUsers {
         </div>
       </div>
     `;
+
+    return AdminNavigation.renderLayout(
+      'User Management',
+      'Manage system users and their roles',
+      user,
+      '/admin/users',
+      content
+    );
   }
 
   static getScript(): string {

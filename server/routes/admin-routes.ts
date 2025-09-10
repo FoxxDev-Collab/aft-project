@@ -10,8 +10,8 @@ import { AdminReports } from "../../admin/reports";
 import { createHtmlPage } from "../utils";
 
 // Admin Routes Handler
-export async function handleAdminRoutes(request: Request, path: string): Promise<Response> {
-  const authResult = await RoleMiddleware.checkAuthAndRole(request, UserRole.ADMIN);
+export async function handleAdminRoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
+  const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.ADMIN);
   if (authResult.response) return authResult.response;
   
   const user = { 

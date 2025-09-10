@@ -18,8 +18,6 @@ export class RequestorNavigation {
     { label: 'Dashboard', href: '/requestor', icon: '🏠' },
     { label: 'My Requests', href: '/requestor/requests', icon: '📋' },
     { label: 'New Request', href: '/requestor/new-request', icon: '➕' },
-    { label: 'Templates', href: '/requestor/templates', icon: '📄' },
-    { label: 'Help', href: '/requestor/help', icon: '❓' }
   ];
 
   static getNavItems(currentPath: string): RequestorNavItem[] {

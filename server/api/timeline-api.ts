@@ -4,12 +4,12 @@ import { checkAuth } from "../utils";
 
 const db = getDb();
 
-export async function handleTimelineAPI(request: Request, path: string): Promise<Response | null> {
+export async function handleTimelineAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   const method = request.method;
   
   // Timeline API for requests
   if (path.startsWith('/api/requests/') && path.endsWith('/timeline') && method === 'GET') {
-    const auth = await checkAuth(request);
+    const auth = await checkAuth(request, ipAddress);
     if (!auth || !auth.roleSelected) {
       return new Response(JSON.stringify({ error: 'Not authenticated' }), { 
         status: 401,

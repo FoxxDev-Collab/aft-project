@@ -7,7 +7,7 @@ import { getDb } from '../../lib/database-bun';
 import { createHtmlPage } from '../utils';
 
 // Export handler function for main server
-export async function handleMediaCustodianRoutes(request: Request, path: string): Promise<Response> {
+export async function handleMediaCustodianRoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
   // Extract user from session/auth
   const user = { id: 1, email: 'media-custodian@aft.gov', role: 'media-custodian' }; // TODO: Get from auth
   

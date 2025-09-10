@@ -10,13 +10,40 @@ import {
   selectSessionRole,
   switchSessionRole
 } from "../../lib/security";
-import { getClientIP, checkAuth } from "../utils";
+import { checkAuth } from "../utils";
 
 const db = getDb();
 
-export async function handleAuthAPI(request: Request, path: string): Promise<Response | null> {
+export async function handleAuthAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   const method = request.method;
-  const ipAddress = getClientIP(request);
+  
+  // Email validation API
+  if (path === '/api/check-email' && method === 'POST') {
+    try {
+      const body = await request.json() as { email: string };
+      const email = body.email;
+
+      if (!email) {
+        return new Response(JSON.stringify({ error: 'Email is required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const user = db.query("SELECT id FROM users WHERE email = ? AND is_active = 1").get(email);
+      
+      return new Response(JSON.stringify({ exists: !!user }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Invalid request' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
   
   // Login API
   if (path === '/api/login' && method === 'POST') {
@@ -41,8 +68,23 @@ export async function handleAuthAPI(request: Request, path: string): Promise<Res
     }
     
     const user = db.query("SELECT * FROM users WHERE email = ? AND is_active = 1").get(body.email) as any;
+
+    if (!user) {
+      recordFailedAttempt(ipAddress + ':' + body.email);
+      await auditLog(null, 'LOGIN_FAILED_NO_USER',
+        `Failed login attempt for non-existent user ${body.email}`, ipAddress);
+
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'No account with that email',
+        remainingAttempts: rateCheck.remainingAttempts - 1
+      }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
     
-    if (user && await verifyPassword(body.password, user.password)) {
+    if (await verifyPassword(body.password, user.password)) {
       // Success - reset rate limit and get user roles
       resetRateLimit(ipAddress + ':' + body.email);
       
@@ -73,10 +115,10 @@ export async function handleAuthAPI(request: Request, path: string): Promise<Res
       });
     }
     
-    // Failed login
+    // Failed login - incorrect password
     recordFailedAttempt(ipAddress + ':' + body.email);
-    await auditLog(user?.id || null, 'LOGIN_FAILED', 
-      `Failed login attempt for ${body.email}`, ipAddress);
+    await auditLog(user.id, 'LOGIN_FAILED_BAD_PASS', 
+      `Failed login attempt for ${body.email} (incorrect password)`, ipAddress);
     
     return new Response(JSON.stringify({ 
       success: false, 
@@ -90,7 +132,7 @@ export async function handleAuthAPI(request: Request, path: string): Promise<Res
   
   // Role selection API
   if (path === '/api/select-role' && method === 'POST') {
-    const auth = await checkAuth(request);
+    const auth = await checkAuth(request, ipAddress);
     if (!auth) {
       return new Response(JSON.stringify({ error: 'Not authenticated' }), { 
         status: 401,
@@ -119,7 +161,7 @@ export async function handleAuthAPI(request: Request, path: string): Promise<Res
   
   // Role switch API
   if (path === '/api/switch-role' && method === 'POST') {
-    const auth = await checkAuth(request);
+    const auth = await checkAuth(request, ipAddress);
     if (!auth || !auth.roleSelected) {
       return new Response(JSON.stringify({ error: 'Not authenticated or no role selected' }), { 
         status: 401,
