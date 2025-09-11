@@ -97,30 +97,6 @@ export class AdminReports {
       </div>
     `).join('');
 
-    const quickReports = [
-      { name: 'Daily Activity Summary', type: 'daily', icon: '📊' },
-      { name: 'Weekly User Report', type: 'weekly', icon: '👥' },
-      { name: 'Monthly Security Audit', type: 'monthly', icon: '🔒' },
-      { name: 'Request Processing Report', type: 'requests', icon: '📋' },
-      { name: 'System Health Report', type: 'system', icon: '⚙️' }
-    ];
-
-    const quickReportsHtml = quickReports.map(report => `
-      <div class="flex items-center justify-between p-4 bg-[var(--muted)] rounded-lg">
-        <div class="flex items-center gap-3">
-          <span class="text-2xl">${report.icon}</span>
-          <div>
-            <div class="font-medium text-[var(--foreground)]">${report.name}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Generate and download report</div>
-          </div>
-        </div>
-        ${ComponentBuilder.primaryButton({
-          children: 'Generate',
-          onClick: `generateQuickReport('${report.type}')`,
-          size: 'sm'
-        })}
-      </div>
-    `).join('');
 
     const content = `
       <div class="space-y-8">
@@ -129,14 +105,6 @@ export class AdminReports {
           <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Report Categories</h2>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             ${reportCardsHtml}
-          </div>
-        </div>
-
-        <!-- Quick Reports -->
-        <div>
-          <h2 class="text-xl font-semibold text-[var(--foreground)] mb-4">Quick Reports</h2>
-          <div class="space-y-3">
-            ${quickReportsHtml}
           </div>
         </div>
 
