@@ -18,6 +18,7 @@ export class DTANavigation {
   private static readonly NAV_ITEMS: DTANavItem[] = [
     { label: 'Dashboard', href: '/dta', icon: ChartBarIcon({ size: 16 }) },
     { label: 'Transfer Requests', href: '/dta/requests', icon: FileTextIcon({ size: 16 }) },
+    { label: 'All Requests', href: '/dta/all-requests', icon: ClipboardIcon({ size: 16 }) },
     { label: 'Active Transfers', href: '/dta/active', icon: ArrowRightIcon({ size: 16 }) },
     { label: 'Data Management', href: '/dta/data', icon: DatabaseIcon({ size: 16 }) }
   ];

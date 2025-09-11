@@ -124,6 +124,14 @@ export class RoleMiddleware {
     return roleUrls[role] || '/dashboard';
   }
   
+  // Check authentication only (no specific role required)
+  static async checkAuth(
+    request: Request,
+    ipAddress: string
+  ): Promise<{ session: SecureSession; response?: Response }> {
+    return this.checkAuthAndRole(request, ipAddress);
+  }
+  
   // Comprehensive auth check with proper redirects
   static async checkAuthAndRole(
     request: Request, 

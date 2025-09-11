@@ -18,8 +18,7 @@ export class MediaCustodianNavigation {
     { label: 'Dashboard', href: '/media-custodian', icon: '🏠' },
     { label: 'All Requests', href: '/media-custodian/requests', icon: '📋' },
     { label: 'Media Inventory', href: '/media-custodian/inventory', icon: '💾' },
-    { label: 'Reports', href: '/media-custodian/reports', icon: '📊' },
-    { label: 'Help', href: '/media-custodian/help', icon: '❓' }
+    { label: 'Reports', href: '/media-custodian/reports', icon: '📊' }
   ];
 
   static getNavItems(currentPath: string): MediaCustodianNavItem[] {

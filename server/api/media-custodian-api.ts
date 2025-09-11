@@ -14,6 +14,18 @@ export class MediaCustodianAPI {
       ORDER BY last_name, first_name
     `).all() as any[];
   }
+  
+  // Get only DTAs for drive assignment
+  static async getDTAUsers(): Promise<any[]> {
+    const db = getDb();
+    return db.query(`
+      SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
+      FROM users u
+      JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
+      WHERE u.is_active = 1 AND ur.role = 'dta'
+      ORDER BY u.last_name, u.first_name
+    `).all() as any[];
+  }
 
   // Media Drive CRUD Operations
   static async getAllMediaDrives(): Promise<any[]> {
@@ -107,15 +119,47 @@ export class MediaCustodianAPI {
     return result.changes > 0;
   }
 
-  static async issueDrive(driveId: number, userId: number, purpose: string): Promise<boolean> {
+  static async issueDrive(driveId: number, userId: number, purpose: string): Promise<{ success: boolean; message: string }> {
     const db = getDb();
+    
+    // 1. Check if user is a DTA
+    const user = db.query(`
+      SELECT u.id, u.email, ur.role
+      FROM users u
+      JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
+      WHERE u.id = ? AND ur.role = 'dta'
+    `).get(userId) as any;
+    
+    if (!user) {
+      return { success: false, message: 'Only DTAs can have drives issued to them' };
+    }
+    
+    // 2. Check if DTA already has a drive issued
+    const existingDrive = db.query(`
+      SELECT id, media_control_number, type
+      FROM media_drives
+      WHERE issued_to_user_id = ? AND status = 'issued'
+    `).get(userId) as any;
+    
+    if (existingDrive) {
+      return { 
+        success: false, 
+        message: `DTA already has drive ${existingDrive.media_control_number} (${existingDrive.type}) issued. DTAs can only have one drive at a time.` 
+      };
+    }
+    
+    // 3. Issue the drive
     const result = db.query(`
       UPDATE media_drives 
       SET issued_to_user_id = ?, issued_at = unixepoch(), purpose = ?, status = 'issued', last_used = unixepoch(), updated_at = unixepoch()
       WHERE id = ? AND status = 'available'
     `).run(userId, purpose, driveId);
     
-    return result.changes > 0;
+    if (result.changes > 0) {
+      return { success: true, message: 'Drive issued successfully' };
+    } else {
+      return { success: false, message: 'Drive not available or not found' };
+    }
   }
 
   static async returnDrive(driveId: number): Promise<{ success: boolean; message: string }> {
@@ -618,14 +662,14 @@ export async function handleMediaCustodianAPI(request: Request, path: string, ip
       const driveId = parseInt(pathParts[3]);
       const requestBody = await request.json() as any;
       const userId = parseInt((requestBody.userId ?? requestBody.user_id) as string);
-      const success = await MediaCustodianAPI.issueDrive(driveId, userId, requestBody.purpose);
+      const result = await MediaCustodianAPI.issueDrive(driveId, userId, requestBody.purpose);
       
-      if (success) {
-        return new Response(JSON.stringify({ success: true }), {
+      if (result.success) {
+        return new Response(JSON.stringify({ success: true, message: result.message }), {
           headers: { 'Content-Type': 'application/json' }
         });
       } else {
-        return new Response(JSON.stringify({ error: 'Failed to issue drive' }), {
+        return new Response(JSON.stringify({ success: false, error: result.message }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         });

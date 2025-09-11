@@ -8,7 +8,7 @@ export class PendingApprovalsPage {
   static async render(user: ApproverUser, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get all pending requests
+    // Get requests pending approval by ISSM (approver role)
     const pendingRequests = db.query(`
       SELECT 
         r.*,
@@ -16,7 +16,7 @@ export class PendingApprovalsPage {
         u.first_name || ' ' || u.last_name as requestor_name
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
-      WHERE r.status NOT IN ('approved','rejected','completed','cancelled','draft')
+      WHERE r.status IN ('pending_approver', 'submitted')
       ORDER BY r.created_at DESC
     `).all() as any[];
 

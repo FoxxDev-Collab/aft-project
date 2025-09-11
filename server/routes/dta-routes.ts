@@ -5,6 +5,9 @@ import { DTADashboard } from "../../dta/dashboard";
 import { DtaRequests } from "../../dta/requests";
 import { DTAActiveTransfers } from "../../dta/active";
 import { DTADataManagement } from "../../dta/data";
+import { DTAAllRequests } from "../../dta/all-requests";
+import { DTAReports } from "../../dta/reports";
+import { DTARequestReviewPage } from "../../dta/request-review";
 import { createHtmlPage } from "../utils";
 
 // DTA Routes Handler
@@ -34,7 +37,7 @@ export async function handleDTARoutes(request: Request, path: string, ipAddress:
       });
 
     case '/dta/requests':
-      const requestsHtml = await DtaRequests.renderRequestsPage(user, viewMode);
+      const requestsHtml = await DtaRequests.renderRequestsPage(user, viewMode, userId);
       return new Response(createHtmlPage(
         "AFT - DTA Requests",
         requestsHtml,
@@ -63,17 +66,41 @@ export async function handleDTARoutes(request: Request, path: string, ipAddress:
         headers: { "Content-Type": "text/html" }
       });
 
+    case '/dta/all-requests':
+      const allRequestsHtml = await DTAAllRequests.render(user, viewMode);
+      return new Response(createHtmlPage(
+        "AFT - All Requests",
+        allRequestsHtml,
+        DTAAllRequests.getScript()
+      ), {
+        headers: { "Content-Type": "text/html" }
+      });
+
     case '/dta/reports':
-      return renderReportsPage(user);
+      const reportsHtml = await DTAReports.renderReportsPage(user);
+      return new Response(createHtmlPage(
+        "AFT - DTA Reports",
+        reportsHtml,
+        DTAReports.getScript()
+      ), {
+        headers: { "Content-Type": "text/html" }
+      });
 
     case '/dta/monitor':
       return renderTransferMonitorPage(user);
 
     // Handle specific request views
     default:
-      if (path.startsWith('/dta/requests/') && path.split('/').length === 4) {
-        const requestId = parseInt(path.split('/')[3] ?? '');
-        return renderRequestDetailsPage(user, requestId);
+      if (path.startsWith('/dta/request/') && path.split('/').length === 4) {
+        const requestId = path.split('/')[3] ?? '';
+        const reviewHtml = await DTARequestReviewPage.render(user, requestId, userId);
+        return new Response(createHtmlPage(
+          "AFT - DTA Request Review",
+          reviewHtml,
+          DTARequestReviewPage.getScript()
+        ), {
+          headers: { "Content-Type": "text/html" }
+        });
       } else if (path.startsWith('/dta/monitor/') && path.split('/').length === 4) {
         const requestId = parseInt(path.split('/')[3] ?? '');
         return renderTransferMonitorPage(user, requestId);

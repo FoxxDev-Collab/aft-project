@@ -9,6 +9,68 @@ export function runApproverMigrations() {
     const columns = db.query("PRAGMA table_info(aft_requests)").all() as Array<{ name: string }>;
     const columnNames = columns.map(c => c.name);
     
+    // Add DTA Section 4 (Anti-Virus Scan) columns if missing
+    if (!columnNames.includes('origination_scan_performed')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_scan_performed BOOLEAN DEFAULT 0");
+      console.log("✓ Added origination_scan_performed column to aft_requests");
+    }
+    if (!columnNames.includes('origination_files_scanned')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_files_scanned INTEGER");
+      console.log("✓ Added origination_files_scanned column to aft_requests");
+    }
+    if (!columnNames.includes('origination_threats_found')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_threats_found INTEGER DEFAULT 0");
+      console.log("✓ Added origination_threats_found column to aft_requests");
+    }
+    if (!columnNames.includes('destination_scan_performed')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_scan_performed BOOLEAN DEFAULT 0");
+      console.log("✓ Added destination_scan_performed column to aft_requests");
+    }
+    if (!columnNames.includes('destination_files_scanned')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_files_scanned INTEGER");
+      console.log("✓ Added destination_files_scanned column to aft_requests");
+    }
+    if (!columnNames.includes('destination_threats_found')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_threats_found INTEGER DEFAULT 0");
+      console.log("✓ Added destination_threats_found column to aft_requests");
+    }
+    
+    // Add scan status fields for clean/infected results
+    if (!columnNames.includes('origination_scan_status')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN origination_scan_status TEXT DEFAULT 'pending'");
+      console.log("✓ Added origination_scan_status column to aft_requests");
+    }
+    if (!columnNames.includes('destination_scan_status')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN destination_scan_status TEXT DEFAULT 'pending'");
+      console.log("✓ Added destination_scan_status column to aft_requests");
+    }
+    
+    // Add transfer completion fields if missing
+    if (!columnNames.includes('transfer_completed_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN transfer_completed_date INTEGER");
+      console.log("✓ Added transfer_completed_date column to aft_requests");
+    }
+    if (!columnNames.includes('files_transferred_count')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN files_transferred_count INTEGER");
+      console.log("✓ Added files_transferred_count column to aft_requests");
+    }
+    if (!columnNames.includes('dta_signature_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN dta_signature_date INTEGER");
+      console.log("✓ Added dta_signature_date column to aft_requests");
+    }
+    if (!columnNames.includes('sme_signature_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN sme_signature_date INTEGER");
+      console.log("✓ Added sme_signature_date column to aft_requests");
+    }
+    if (!columnNames.includes('assigned_sme_id')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN assigned_sme_id INTEGER REFERENCES users(id)");
+      console.log("✓ Added assigned_sme_id column to aft_requests");
+    }
+    if (!columnNames.includes('tpi_maintained')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN tpi_maintained BOOLEAN DEFAULT 0");
+      console.log("✓ Added tpi_maintained column to aft_requests");
+    }
+    
     // Add approver_email column if missing
     if (!columnNames.includes('approver_email')) {
       db.exec("ALTER TABLE aft_requests ADD COLUMN approver_email TEXT");

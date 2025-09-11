@@ -43,7 +43,7 @@ export const AFT_STATUS_LABELS = {
   [AFTStatus.PENDING_CPSO]: 'Pending CPSO Review',
   [AFTStatus.APPROVED]: 'Approved',
   [AFTStatus.REJECTED]: 'Rejected',
-  [AFTStatus.PENDING_DTA]: 'Pending DTA Assignment',
+  [AFTStatus.PENDING_DTA]: 'Pending DTA Processing',
   [AFTStatus.ACTIVE_TRANSFER]: 'Transfer in Progress',
   [AFTStatus.PENDING_SME_SIGNATURE]: 'Pending SME Signature',
   [AFTStatus.PENDING_SME]: 'Pending SME Review',
@@ -81,6 +81,13 @@ export function getDb() {
       // Migrations run automatically on import
     }).catch(err => {
       console.error("Failed to run migrations:", err);
+    });
+
+    // Run seeder for sample requests
+    import("./database-seeder").then(s => {
+      // Seeder runs automatically on import
+    }).catch(err => {
+      console.error("Failed to run seeder:", err);
     });
   }
   return db;
@@ -370,6 +377,13 @@ async function initializeDatabase() {
         additionalRoles: [UserRole.REQUESTOR],
         name: 'Robert Taylor', 
         title: 'Contractor Program Security Officer' 
+      },
+      {
+        email: 'requestor@aft.gov', 
+        primaryRole: UserRole.REQUESTOR, 
+        additionalRoles: [],
+        name: 'Emily Clark', 
+        title: 'Request Submitter'
       },
       { 
         email: 'dta@aft.gov', 

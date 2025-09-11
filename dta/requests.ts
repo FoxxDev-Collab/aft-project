@@ -7,15 +7,18 @@ import { AFT_STATUS_LABELS } from "../lib/database-bun";
 
 export class DtaRequests {
   
-  static async renderRequestsPage(user: DTAUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
+  static async renderRequestsPage(user: DTAUser, viewMode: 'table' | 'timeline' = 'table', userId?: number): Promise<string> {
     const db = getDb();
     
-    // Get request statistics
-    const totalRequests = db.query("SELECT COUNT(*) as count FROM aft_requests").get() as any;
-    const pendingRequests = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status NOT IN ('completed', 'rejected', 'cancelled')").get() as any;
+    // Get request statistics for assigned DTA
+    const totalRequests = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE dta_id = ?").get(userId) as any;
+    const pendingRequests = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status NOT IN ('completed', 'rejected', 'cancelled') AND dta_id = ?").get(userId) as any;
     
-    // Get requests with timeline data
-    const requestsWithTimeline = RequestTrackingService.getRequestsWithTimeline({ limit: 50 });
+    // Get requests with timeline data - filtered by DTA assignment
+    const requestsWithTimeline = RequestTrackingService.getRequestsWithTimeline({ 
+      limit: 50,
+      dta_id: userId 
+    });
 
     // Transform requests data for table
     const tableData = requestsWithTimeline.map((request: any) => ({
@@ -123,7 +126,7 @@ export class DtaRequests {
         label: 'Actions',
         render: (value: any, row: any) => {
           const actions: Array<{ label: string; onClick: string; variant: 'primary' | 'secondary' | 'destructive' }> = [
-            { label: 'View', onClick: `viewDTARequest(${row.id})`, variant: 'secondary' },
+            { label: 'Review', onClick: `window.location.href='/dta/request/${row.id}'`, variant: 'secondary' },
             { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' }
           ];
           
@@ -181,18 +184,8 @@ export class DtaRequests {
       ]
     });
 
-    // Create table actions with view toggle
+    // Create table actions with view toggle (DTA doesn't create requests)
     const viewToggle = ComponentBuilder.viewToggle(viewMode);
-    const actions = ComponentBuilder.tableActions({
-      primary: {
-        label: '+ New Request',
-        onClick: 'createRequest()'
-      },
-      secondary: [
-        { label: 'Export All', onClick: 'exportRequests()' },
-        { label: 'Import', onClick: 'importRequests()' }
-      ]
-    });
 
     // Create timeline view content
     const timelineContent = viewMode === 'timeline' ? this.renderTimelineView(tableData) : '';
@@ -200,14 +193,11 @@ export class DtaRequests {
     // Create table container with view toggle
     const tableContainer = ComponentBuilder.tableContainer({
       title: 'AFT Requests',
-      description: 'Manage and track all Assured File Transfer requests with live status timeline',
+      description: 'Manage your assigned Assured File Transfer requests',
       search,
       filters,
       actions: `
-        <div class="flex items-center justify-between">
-          <div class="flex gap-2">
-            ${actions}
-          </div>
+        <div class="flex items-center justify-end">
           ${viewToggle}
         </div>
       `,
@@ -308,11 +298,6 @@ export class DtaRequests {
   static getScript(): string {
     return `
       let currentView = 'table';
-      
-      function createRequest() {
-        // Navigate to request creation page (to be implemented)
-        alert('Request creation form not yet implemented. This would navigate to /requests/new');
-      }
       
       function viewDTARequest(requestId) {
         // Fetch request details and show DTA review modal
@@ -512,14 +497,6 @@ export class DtaRequests {
         const url = new URL(window.location);
         url.searchParams.set('view', viewType);
         window.location.href = url.toString();
-      }
-      
-      function exportRequests() {
-        alert('Export functionality not yet implemented.');
-      }
-      
-      function importRequests() {
-        alert('Import functionality not yet implemented.');
       }
       
       function filterRequests(searchTerm) {

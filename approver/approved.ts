@@ -8,7 +8,7 @@ export class ApprovedRequestsPage {
   static async render(user: ApproverUser, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get all approved requests by this approver
+    // Get all requests approved by this approver (regardless of current status)
     const approvedRequests = db.query(`
       SELECT 
         r.*,
@@ -19,7 +19,7 @@ export class ApprovedRequestsPage {
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
       LEFT JOIN users a ON r.approver_id = a.id
-      WHERE r.status = 'approved' AND r.approver_email = ?
+      WHERE r.approver_email = ? AND r.status NOT IN ('draft', 'submitted', 'pending_approver', 'rejected')
       ORDER BY r.updated_at DESC
     `).all(user.email) as any[];
 
@@ -45,6 +45,7 @@ export class ApprovedRequestsPage {
       destination_system: request.destination_system,
       classification: request.classification,
       updated_at: request.updated_at,
+      status: request.status,
     }));
 
     const columns = [
@@ -62,8 +63,30 @@ export class ApprovedRequestsPage {
       },
       {
         key: 'status',
-        label: 'Status',
-        render: () => ComponentBuilder.statusBadge('Approved', 'success'),
+        label: 'Current Status',
+        render: (value: any, row: any) => {
+          const statusLabels = {
+            'pending_cpso': 'Pending CPSO',
+            'pending_dta': 'Pending DTA',
+            'active_transfer': 'Active Transfer',
+            'pending_sme_signature': 'Pending SME',
+            'completed': 'Completed',
+            'cancelled': 'Cancelled',
+            'approved': 'Approved'
+          };
+          const statusVariants = {
+            'pending_cpso': 'warning',
+            'pending_dta': 'warning',
+            'active_transfer': 'info',
+            'pending_sme_signature': 'warning',
+            'completed': 'success',
+            'cancelled': 'destructive',
+            'approved': 'success'
+          } as const;
+          const label = statusLabels[row.status as keyof typeof statusLabels] || row.status;
+          const variant = statusVariants[row.status as keyof typeof statusVariants] || 'default';
+          return ComponentBuilder.statusBadge(label, variant);
+        },
       },
       {
         key: 'actions',

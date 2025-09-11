@@ -33,10 +33,10 @@ export class RequestTrackingService {
   static getRequestTimeline(requestId: number): RequestTimelineData | null {
     const db = getDb();
     
-    // Get request basic info
+    // Get request basic info including transfer_type for conditional flow
     const request = db.query(`
       SELECT id, status, created_at, updated_at, requestor_name, 
-             approval_date, actual_start_date, actual_end_date
+             approval_date, actual_start_date, actual_end_date, transfer_type
       FROM aft_requests 
       WHERE id = ?
     `).get(requestId) as any;
@@ -72,7 +72,7 @@ export class RequestTrackingService {
   // Generate timeline steps from request data and audit entries
   private static generateTimelineSteps(request: any, auditEntries: RequestAuditEntry[]): TimelineStep[] {
     const steps: TimelineStep[] = [];
-    const statusFlow = this.getStatusFlow(request.status);
+    const statusFlow = this.getStatusFlow(request.status, request.transfer_type);
     
     // Create a map of status changes from audit entries
     const statusChanges = new Map<string, RequestAuditEntry>();
@@ -85,9 +85,9 @@ export class RequestTrackingService {
     // Generate steps for each status in the flow
     statusFlow.forEach((status, index) => {
       const auditEntry = statusChanges.get(status);
-      const isCompleted = this.isStatusCompleted(status, request.status);
+      const isCompleted = this.isStatusCompleted(status, request.status, request.transfer_type);
       const isCurrent = status === request.status;
-      const isPending = this.isStatusPending(status, request.status);
+      const isPending = this.isStatusPending(status, request.status, request.transfer_type);
       
       let stepStatus: TimelineStep['status'] = 'pending';
       if (isCompleted) stepStatus = 'completed';
@@ -119,12 +119,21 @@ export class RequestTrackingService {
   }
   
   // Get the expected status flow for a request type
-  private static getStatusFlow(currentStatus: string): string[] {
-    // Base flow for most requests
+  private static getStatusFlow(currentStatus: string, transferType?: string): string[] {
+    // Determine flow based on transfer type
+    // High-to-Low includes DAO review, others skip it
     const baseFlow: string[] = [
       AFTStatus.DRAFT,
-      AFTStatus.SUBMITTED,
-      AFTStatus.PENDING_DAO,
+      AFTStatus.SUBMITTED
+    ];
+    
+    // Only include DAO step for high-to-low transfers
+    if (transferType === 'high-to-low') {
+      baseFlow.push(AFTStatus.PENDING_DAO);
+    }
+    
+    // Continue with rest of flow
+    baseFlow.push(
       AFTStatus.PENDING_APPROVER,
       AFTStatus.PENDING_CPSO,
       AFTStatus.APPROVED,
@@ -135,7 +144,7 @@ export class RequestTrackingService {
       AFTStatus.PENDING_MEDIA_CUSTODIAN,
       AFTStatus.COMPLETED,
       AFTStatus.DISPOSED
-    ];
+    );
     
     // Handle terminal states
     if (currentStatus === AFTStatus.REJECTED) {
@@ -154,8 +163,8 @@ export class RequestTrackingService {
   }
   
   // Check if a status has been completed
-  private static isStatusCompleted(status: string, currentStatus: string): boolean {
-    const flow = this.getStatusFlow(currentStatus);
+  private static isStatusCompleted(status: string, currentStatus: string, transferType?: string): boolean {
+    const flow = this.getStatusFlow(currentStatus, transferType);
     const statusIndex = flow.indexOf(status);
     const currentIndex = flow.indexOf(currentStatus);
     
@@ -163,8 +172,8 @@ export class RequestTrackingService {
   }
   
   // Check if a status is pending (future)
-  private static isStatusPending(status: string, currentStatus: string): boolean {
-    const flow = this.getStatusFlow(currentStatus);
+  private static isStatusPending(status: string, currentStatus: string, transferType?: string): boolean {
+    const flow = this.getStatusFlow(currentStatus, transferType);
     const statusIndex = flow.indexOf(status);
     const currentIndex = flow.indexOf(currentStatus);
     
@@ -353,6 +362,7 @@ export class RequestTrackingService {
     filters?: {
       status?: string;
       requestor_id?: number;
+      dta_id?: number;
       limit?: number;
       offset?: number;
     }
@@ -380,6 +390,11 @@ export class RequestTrackingService {
     if (filters?.requestor_id) {
       conditions.push('r.requestor_id = ?');
       params.push(filters.requestor_id);
+    }
+    
+    if (filters?.dta_id) {
+      conditions.push('r.dta_id = ?');
+      params.push(filters.dta_id);
     }
     
     if (conditions.length > 0) {

@@ -10,7 +10,8 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
   
   // List available DTAs (users with DTA role who have available drives)
   if (path === '/api/requestor/dtas' && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
+    // Allow any authenticated user to access requestor APIs
+    const authResult = await RoleMiddleware.checkAuth(request, ipAddress);
     if (authResult.response) return authResult.response;
     try {
       const dtas = db.query(`
@@ -29,7 +30,8 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
 
   // Check if a given DTA has an issued drive
   if (path.startsWith('/api/requestor/dta/') && path.endsWith('/issued-drive') && method === 'GET') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
+    // Allow any authenticated user to access requestor APIs
+    const authResult = await RoleMiddleware.checkAuth(request, ipAddress);
     if (authResult.response) return authResult.response;
     try {
       const segments = path.split('/');
@@ -53,7 +55,8 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
 
   // Requestor save draft API
   if (path === '/api/requestor/save-draft' && method === 'POST') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
+    // Allow any authenticated user to access requestor APIs
+    const authResult = await RoleMiddleware.checkAuth(request, ipAddress);
     if (authResult.response) return authResult.response;
     
     try {
@@ -227,7 +230,8 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
 
   // Requestor submit (or resubmit) request API
   if (path === '/api/requestor/submit-request' && method === 'POST') {
-    const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
+    // Allow any authenticated user to access requestor APIs
+    const authResult = await RoleMiddleware.checkAuth(request, ipAddress);
     if (authResult.response) return authResult.response;
     
     try {
@@ -245,7 +249,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
       
       // Verify the request belongs to this user and is in a submittable status
       const existingRequest = db.query(`
-        SELECT id, status, request_number FROM aft_requests 
+        SELECT id, status, request_number, transfer_type FROM aft_requests 
         WHERE id = ? AND requestor_id = ?
       `).get(requestId, authResult.session.userId) as any;
       
@@ -269,14 +273,17 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         });
       }
       
-      // Update request status to submitted (clear rejection reason if resubmitting)
+      // Determine initial status based on transfer type
+      // High-to-Low transfers require DAO review first, others go directly to approver
+      const nextStatus = existingRequest.transfer_type === 'high-to-low' ? 'pending_dao' : 'pending_approver';
+      
       db.query(`
         UPDATE aft_requests SET
-          status = 'submitted',
+          status = ?,
           rejection_reason = NULL,
           updated_at = unixepoch()
         WHERE id = ?
-      `).run(requestId);
+      `).run(nextStatus, requestId);
       
       // Create digital signature record (simplified - in real implementation would use CAC)
       db.query(`

@@ -15,8 +15,14 @@ export class MediaCustodianInventory {
       ORDER BY md.created_at DESC
     `).all() as any[];
 
-    // Get all users for assignment dropdown
-    const users = db.query("SELECT id, email, first_name, last_name FROM users ORDER BY email").all() as any[];
+    // Get only DTAs for drive assignment dropdown
+    const users = db.query(`
+      SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
+      FROM users u
+      JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
+      WHERE u.is_active = 1 AND ur.role = 'dta'
+      ORDER BY u.last_name, u.first_name
+    `).all() as any[];
 
     // Build drives table
     const drivesTable = this.buildDrivesTable(drives);
@@ -29,8 +35,6 @@ export class MediaCustodianInventory {
 
     const pageContent = `
       <div class="space-y-6">
-        ${MediaCustodianNavigation.renderBreadcrumb('/media-custodian/inventory')}
-        
         <!-- Action Bar -->
         <div class="flex justify-between items-center">
           <div>
@@ -343,8 +347,19 @@ export class MediaCustodianInventory {
         <div class="bg-[var(--background)] rounded-lg shadow-xl max-w-md w-full mx-4">
           <div class="p-6">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-semibold text-[var(--foreground)]">Issue Drive to User</h3>
+              <h3 class="text-lg font-semibold text-[var(--foreground)]">Issue Drive to DTA</h3>
               <button onclick="hideIssueDriveModal()" class="text-[var(--muted-foreground)] hover:text-[var(--foreground)]">&times;</button>
+            </div>
+            
+            <div class="mb-4 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-md">
+              <div class="flex items-center">
+                <div class="text-[var(--info)] mr-2">ℹ</div>
+                <div class="text-sm text-[var(--info)]">
+                  <strong>Drive Assignment Rules:</strong><br>
+                  • Only DTAs can have drives issued<br>
+                  • DTAs can only have one drive at a time
+                </div>
+              </div>
             </div>
             
             <form id="issue-drive-form" onsubmit="submitIssueDrive(event)">
@@ -357,11 +372,12 @@ export class MediaCustodianInventory {
                 </div>
                 
                 <div>
-                  <label class="block text-sm font-medium text-[var(--foreground)] mb-1">Issue to User *</label>
+                  <label class="block text-sm font-medium text-[var(--foreground)] mb-1">Issue to DTA *</label>
                   <select name="user_id" required class="w-full px-3 py-2 border border-[var(--border)] rounded-md">
-                    <option value="">Select user</option>
+                    <option value="">Select DTA</option>
                     ${userOptions}
                   </select>
+                  ${users.length === 0 ? '<p class="text-sm text-[var(--muted-foreground)] mt-1">No DTAs available for drive assignment</p>' : ''}
                 </div>
                 
                 <div>

@@ -12,7 +12,8 @@ const db = getDb();
 
 // Requestor Routes Handler
 export async function handleRequestorRoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
-  const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
+  // Allow any authenticated user to access requestor routes (all users can be requestors)
+  const authResult = await RoleMiddleware.checkAuth(request, ipAddress);
   if (authResult.response) return authResult.response;
   
   const user = { 

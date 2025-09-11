@@ -3,6 +3,7 @@ import { UserRole } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { SMEDashboard } from "../../sme/dashboard";
 import { SMERequests } from "../../sme/requests";
+import { SMEAllRequests } from "../../sme/all-requests";
 import { createHtmlPage } from "../utils";
 
 // SME Routes Handler
@@ -35,6 +36,18 @@ export async function handleSMERoutes(request: Request, path: string, ipAddress:
         "AFT - SME Requests",
         requestsHtml,
         SMERequests.getScript()
+      ), {
+        headers: { "Content-Type": "text/html" }
+      });
+
+    case '/sme/all-requests':
+      const url = new URL(request.url);
+      const viewMode = url.searchParams.get('view') as 'table' | 'timeline' || 'table';
+      const allRequestsHtml = await SMEAllRequests.render(user, viewMode);
+      return new Response(createHtmlPage(
+        "AFT - All Requests",
+        allRequestsHtml,
+        SMEAllRequests.getScript()
       ), {
         headers: { "Content-Type": "text/html" }
       });

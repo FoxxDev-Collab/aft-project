@@ -55,9 +55,9 @@ async function handleDTAGet(segments: string[], db: any, userId: number, userEma
       if (id && action === 'timeline') {
         return getRequestTimeline(db, parseInt(id));
       } else if (id) {
-        return getRequestDetails(db, parseInt(id));
+        return getRequestDetails(db, parseInt(id), userId);
       } else {
-        return getAllRequests(db);
+        return getAllRequests(db, userId);
       }
     
     case 'transfers':
@@ -90,6 +90,16 @@ async function handleDTAPost(segments: string[], request: Request, db: any, user
         return await approveRequest(db, parseInt(id), body, userId, userEmail, ipAddress);
       } else if (id && action === 'reject') {
         return await rejectRequest(db, parseInt(id), body, userId, userEmail, ipAddress);
+      } else if (id && action === 'activate') {
+        return await activateTransfer(db, parseInt(id), body, userId, userEmail, ipAddress);
+      } else if (id && action === 'scan') {
+        return await recordAntivirusScan(db, parseInt(id), body, userId, userEmail, ipAddress);
+      } else if (id && action === 'complete') {
+        return await completeTransfer(db, parseInt(id), body, userId, userEmail, ipAddress);
+      } else if (id && action === 'sign') {
+        return await signDTARequest(db, parseInt(id), body, userId, userEmail, ipAddress);
+      } else if (id && action === 'transfer-status') {
+        return getTransferStatus(db, parseInt(id));
       } else if (id && action === 'antivirus-scan') {
         return await recordAntivirusScan(db, parseInt(id), body, userId, userEmail, ipAddress);
       } else if (id && action === 'complete-transfer') {
@@ -161,17 +171,22 @@ function getDashboardData(db: any): Response {
   });
 }
 
-function getAllRequests(db: any): Response {
-  const requests = RequestTrackingService.getRequestsWithTimeline({ limit: 100 });
+function getAllRequests(db: any, userId?: number): Response {
+  // For DTA, only show assigned requests in their queue
+  const requests = RequestTrackingService.getRequestsWithTimeline({ 
+    limit: 100,
+    dta_id: userId 
+  });
   return new Response(JSON.stringify({ success: true, requests }), {
     headers: { 'Content-Type': 'application/json' }
   });
 }
 
-function getRequestDetails(db: any, requestId: number): Response {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+function getRequestDetails(db: any, requestId: number, userId?: number): Response {
+  // DTA can only access details of their assigned requests
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
-    return new Response(JSON.stringify({ error: 'Request not found' }), {
+    return new Response(JSON.stringify({ error: 'Request not found or not assigned to you' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
     });
@@ -223,26 +238,31 @@ function getAllTransfers(db: any): Response {
 }
 
 function getTransferStatus(db: any, requestId: number): Response {
-  const transfer = db.query(`
-    SELECT *, 
-      CASE 
-        WHEN status = 'active_transfer' THEN 'running'
-        WHEN status = 'completed' THEN 'completed'
-        WHEN status = 'cancelled' THEN 'cancelled'
-        ELSE 'unknown'
-      END as transfer_status
-    FROM aft_requests 
-    WHERE id = ?
-  `).get(requestId);
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
 
-  if (!transfer) {
-    return new Response(JSON.stringify({ error: 'Transfer not found' }), {
+  if (!request) {
+    return new Response(JSON.stringify({ error: 'Request not found' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
     });
   }
 
-  return new Response(JSON.stringify({ success: true, transfer }), {
+  const transferStatus = {
+    origination_scan_performed: !!request.origination_scan_performed,
+    destination_scan_performed: !!request.destination_scan_performed,
+    origination_threats_found: request.origination_threats_found || 0,
+    destination_threats_found: request.destination_threats_found || 0,
+    transfer_completed: !!request.transfer_completed_date,
+    dta_signature: !!request.dta_signature_date,
+    files_transferred: request.files_transferred_count || 0,
+    tpi_maintained: !!request.tpi_maintained
+  };
+
+  return new Response(JSON.stringify({ 
+    success: true, 
+    request, 
+    transferStatus 
+  }), {
     headers: { 'Content-Type': 'application/json' }
   });
 }
@@ -271,9 +291,10 @@ function getDTAStatistics(db: any): Response {
 
 // POST endpoint implementations
 async function approveRequest(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Response {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+  // Only allow assigned DTA to approve the request
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
-    return new Response(JSON.stringify({ error: 'Request not found' }), {
+    return new Response(JSON.stringify({ error: 'Request not found or not assigned to you' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
     });
@@ -294,11 +315,18 @@ async function approveRequest(db: any, requestId: number, body: any, userId: num
   `).run('active_transfer', userId, requestId);
 
   // Log the approval
-  RequestTrackingService.addTimelineEntry(requestId, 'dta_approved', 'DTA Approved', 
-    `Request approved by ${userEmail} and moved to active transfer`, userEmail);
+  RequestTrackingService.addAuditEntry(
+    parseInt(requestId),
+    userId,
+    'dta_approved',
+    undefined,
+    'active_transfer',
+    JSON.stringify({ action: 'dta_approved' }),
+    `Request approved by ${userEmail} and moved to active transfer`
+  );
 
   // Security audit log
-  await auditLog('DTA_APPROVAL', userEmail, ipAddress, { 
+  await auditLog(userId, 'DTA_APPROVAL', `DTA approved request #${requestId}`, ipAddress, { 
     requestId, 
     action: 'approve',
     notes: body.notes || 'No additional notes' 
@@ -314,7 +342,8 @@ async function approveRequest(db: any, requestId: number, body: any, userId: num
 }
 
 async function rejectRequest(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Response {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+  // Only allow assigned DTA to reject the request
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
     return new Response(JSON.stringify({ error: 'Request not found' }), {
       status: 404,
@@ -340,11 +369,18 @@ async function rejectRequest(db: any, requestId: number, body: any, userId: numb
   db.query("UPDATE aft_requests SET status = ?, updated_at = unixepoch() WHERE id = ?").run('rejected', requestId);
 
   // Log the rejection
-  RequestTrackingService.addTimelineEntry(requestId, 'dta_rejected', 'DTA Rejected', 
-    `Request rejected by ${userEmail}: ${body.reason}`, userEmail);
+  RequestTrackingService.addAuditEntry(
+    parseInt(requestId),
+    userId,
+    'dta_rejected',
+    undefined,
+    'rejected',
+    JSON.stringify({ action: 'dta_rejected', reason: body.reason }),
+    `Request rejected by ${userEmail}: ${body.reason}`
+  );
 
   // Security audit log
-  await auditLog('DTA_REJECTION', userEmail, ipAddress, { 
+  await auditLog(userId, 'DTA_REJECTION', `DTA rejected request #${requestId}`, ipAddress, { 
     requestId, 
     action: 'reject', 
     reason: body.reason 
@@ -356,7 +392,8 @@ async function rejectRequest(db: any, requestId: number, body: any, userId: numb
 }
 
 async function pauseTransfer(db: any, requestId: number, userId: number, userEmail: string, ipAddress: string): Response {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+  // Only allow assigned DTA to pause the transfer
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
     return new Response(JSON.stringify({ error: 'Request not found' }), {
       status: 404,
@@ -373,11 +410,18 @@ async function pauseTransfer(db: any, requestId: number, userId: number, userEma
 
   // In a real implementation, this would pause the actual transfer process
   // For now, we'll just log the action
-  RequestTrackingService.addTimelineEntry(requestId, 'transfer_paused', 'Transfer Paused', 
-    `Transfer paused by ${userEmail}`, userEmail);
+  RequestTrackingService.addAuditEntry(
+    parseInt(requestId),
+    userId,
+    'transfer_paused',
+    'active_transfer',
+    'active_transfer',
+    JSON.stringify({ action: 'transfer_paused' }),
+    `Transfer paused by ${userEmail}`
+  );
 
   // Security audit log
-  await auditLog('TRANSFER_PAUSE', userEmail, ipAddress, { requestId });
+  await auditLog(userId, 'TRANSFER_PAUSE', `Paused transfer for request #${requestId}`, ipAddress, { requestId });
 
   return new Response(JSON.stringify({ success: true, message: 'Transfer paused successfully' }), {
     headers: { 'Content-Type': 'application/json' }
@@ -385,7 +429,8 @@ async function pauseTransfer(db: any, requestId: number, userId: number, userEma
 }
 
 async function resumeTransfer(db: any, requestId: number, userId: number, userEmail: string, ipAddress: string): Response {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+  // Only allow assigned DTA to resume the transfer
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
     return new Response(JSON.stringify({ error: 'Request not found' }), {
       status: 404,
@@ -394,11 +439,11 @@ async function resumeTransfer(db: any, requestId: number, userId: number, userEm
   }
 
   // Resume transfer logic would go here
-  RequestTrackingService.addTimelineEntry(requestId, 'transfer_resumed', 'Transfer Resumed', 
+  RequestTrackingService.addAuditEntry(requestId, 'transfer_resumed', 'Transfer Resumed', 
     `Transfer resumed by ${userEmail}`, userEmail);
 
   // Security audit log
-  await auditLog('TRANSFER_RESUME', userEmail, ipAddress, { requestId });
+  await auditLog(userId, 'TRANSFER_RESUME', `Resumed transfer for request #${requestId}`, ipAddress, { requestId });
 
   return new Response(JSON.stringify({ success: true, message: 'Transfer resumed successfully' }), {
     headers: { 'Content-Type': 'application/json' }
@@ -406,7 +451,8 @@ async function resumeTransfer(db: any, requestId: number, userId: number, userEm
 }
 
 async function cancelTransfer(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Response {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+  // Only allow assigned DTA to cancel the transfer
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
     return new Response(JSON.stringify({ error: 'Request not found' }), {
       status: 404,
@@ -418,11 +464,11 @@ async function cancelTransfer(db: any, requestId: number, body: any, userId: num
   db.query("UPDATE aft_requests SET status = ?, updated_at = unixepoch() WHERE id = ?").run('cancelled', requestId);
 
   // Log the cancellation
-  RequestTrackingService.addTimelineEntry(requestId, 'transfer_cancelled', 'Transfer Cancelled', 
+  RequestTrackingService.addAuditEntry(requestId, 'transfer_cancelled', 'Transfer Cancelled', 
     `Transfer cancelled by ${userEmail}: ${body.reason || 'No reason provided'}`, userEmail);
 
   // Security audit log
-  await auditLog('TRANSFER_CANCEL', userEmail, ipAddress, { 
+  await auditLog(userId, 'TRANSFER_CANCEL', `Cancelled transfer for request #${requestId}`, ipAddress, { 
     requestId, 
     reason: body.reason || 'No reason provided' 
   });
@@ -455,12 +501,12 @@ async function bulkProcessRequests(db: any, body: any, userId: number, userEmail
 
       if (action === 'approve' && request.status === 'pending_dta') {
         db.query("UPDATE aft_requests SET status = ?, updated_at = unixepoch() WHERE id = ?").run('active_transfer', requestId);
-        RequestTrackingService.addTimelineEntry(requestId, 'dta_approved', 'DTA Approved (Bulk)', 
+        RequestTrackingService.addAuditEntry(requestId, 'dta_approved', 'DTA Approved (Bulk)', 
           `Bulk approved by ${userEmail}`, userEmail);
         results.push({ requestId, status: 'approved' });
       } else if (action === 'reject' && request.status === 'pending_dta') {
         db.query("UPDATE aft_requests SET status = ?, updated_at = unixepoch() WHERE id = ?").run('rejected', requestId);
-        RequestTrackingService.addTimelineEntry(requestId, 'dta_rejected', 'DTA Rejected (Bulk)', 
+        RequestTrackingService.addAuditEntry(requestId, 'dta_rejected', 'DTA Rejected (Bulk)', 
           `Bulk rejected by ${userEmail}: ${reason}`, userEmail);
         results.push({ requestId, status: 'rejected' });
       } else {
@@ -472,7 +518,7 @@ async function bulkProcessRequests(db: any, body: any, userId: number, userEmail
   }
 
   // Security audit log
-  await auditLog('BULK_PROCESS', userEmail, ipAddress, { 
+  await auditLog(userId, 'BULK_PROCESS', `Bulk ${body.action} for ${body.requestIds.length} requests`, ipAddress, { 
     action, 
     requestCount: requestIds.length,
     successCount: results.length,
@@ -524,7 +570,7 @@ function updateRequest(db: any, requestId: number, body: any, userId: number, us
   db.query(`UPDATE aft_requests SET ${updates.join(', ')}, updated_at = ? WHERE id = ?`).run(...values);
 
   // Log the update
-  RequestTrackingService.addTimelineEntry(requestId, 'dta_updated', 'DTA Updated', 
+  RequestTrackingService.addAuditEntry(requestId, 'dta_updated', 'DTA Updated', 
     `Request updated by ${userEmail}`, userEmail);
 
   return new Response(JSON.stringify({ success: true, message: 'Request updated successfully' }), {
@@ -557,10 +603,17 @@ async function recordAntivirusScan(db: any, requestId: number, body: any, userId
     });
   }
 
-  const { scanType, filesScanned, threatsFound } = body;
+  const { scanType, result, notes, filesScanned, threatsFound } = body;
   
   if (!scanType || !['origination', 'destination'].includes(scanType)) {
     return new Response(JSON.stringify({ error: 'Invalid scan type. Must be "origination" or "destination"' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  if (!result || !['clean', 'infected'].includes(result)) {
+    return new Response(JSON.stringify({ error: 'Invalid scan result. Must be "clean" or "infected"' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
     });
@@ -571,35 +624,57 @@ async function recordAntivirusScan(db: any, requestId: number, body: any, userId
     db.query(`
       UPDATE aft_requests 
       SET origination_scan_performed = 1, 
+          origination_scan_status = ?,
           origination_files_scanned = ?, 
           origination_threats_found = ?,
           updated_at = unixepoch()
       WHERE id = ?
-    `).run(filesScanned || 0, threatsFound || 0, requestId);
+    `).run(result, filesScanned || 0, result === 'infected' ? (threatsFound || 1) : 0, requestId);
     
-    RequestTrackingService.addTimelineEntry(requestId, 'origination_scan', 'Origination Media Scan Complete', 
-      `Scanned ${filesScanned || 0} files, found ${threatsFound || 0} threats by ${userEmail}`, userEmail);
+    RequestTrackingService.addAuditEntry(
+      parseInt(requestId.toString()),
+      userId,
+      'origination_scan',
+      undefined,
+      'active_transfer',
+      JSON.stringify({ scanType, result, filesScanned: filesScanned || 0, threatsFound: result === 'infected' ? (threatsFound || 1) : 0 }),
+      `Origination media scan: ${result.toUpperCase()}. ${notes || 'No additional notes'}`
+    );
   } else {
     db.query(`
       UPDATE aft_requests 
       SET destination_scan_performed = 1, 
+          destination_scan_status = ?,
           destination_files_scanned = ?, 
           destination_threats_found = ?,
           updated_at = unixepoch()
       WHERE id = ?
-    `).run(filesScanned || 0, threatsFound || 0, requestId);
+    `).run(result, filesScanned || 0, result === 'infected' ? (threatsFound || 1) : 0, requestId);
     
-    RequestTrackingService.addTimelineEntry(requestId, 'destination_scan', 'Destination Media Scan Complete', 
-      `Scanned ${filesScanned || 0} files, found ${threatsFound || 0} threats by ${userEmail}`, userEmail);
+    RequestTrackingService.addAuditEntry(
+      parseInt(requestId.toString()),
+      userId,
+      'destination_scan',
+      undefined,
+      'active_transfer',
+      JSON.stringify({ scanType, result, filesScanned: filesScanned || 0, threatsFound: result === 'infected' ? (threatsFound || 1) : 0 }),
+      `Destination media scan: ${result.toUpperCase()}. ${notes || 'No additional notes'}`
+    );
   }
 
   // Security audit log
-  await auditLog('ANTIVIRUS_SCAN', userEmail, ipAddress, { 
-    requestId, 
-    scanType,
-    filesScanned: filesScanned || 0,
-    threatsFound: threatsFound || 0
-  });
+  await auditLog(
+    userId,
+    'ANTIVIRUS_SCAN',
+    `Recorded ${scanType} scan: ${result}${filesScanned ? ` (${filesScanned} files)` : ''}`,
+    ipAddress,
+    { 
+      requestId, 
+      scanType,
+      result,
+      filesScanned: filesScanned || 0
+    }
+  );
 
   return new Response(JSON.stringify({ 
     success: true, 
@@ -612,8 +687,130 @@ async function recordAntivirusScan(db: any, requestId: number, body: any, userId
   });
 }
 
+async function activateTransfer(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
+  // Only allow assigned DTA to activate the transfer
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
+  console.log(`[DEBUG] DTA Activation - Request ${requestId}, User ${userId}`);
+  console.log(`[DEBUG] Request found:`, request ? 'YES' : 'NO');
+  if (request) {
+    console.log(`[DEBUG] Request status: ${request.status}, Expected: pending_dta`);
+    console.log(`[DEBUG] Request DTA ID: ${request.dta_id}, User ID: ${userId}`);
+  }
+  
+  if (!request) {
+    return new Response(JSON.stringify({ error: 'Request not found or not assigned to you' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Allow both 'pending_dta' and 'approved' status (for backward compatibility)
+  if (request.status !== 'pending_dta' && request.status !== 'approved') {
+    return new Response(JSON.stringify({ 
+      error: `Request is not ready for DTA activation. Current status: ${request.status}` 
+    }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Update request status to active_transfer
+  db.query(`
+    UPDATE aft_requests 
+    SET status = 'active_transfer', 
+        actual_start_date = unixepoch(), 
+        updated_at = unixepoch() 
+    WHERE id = ?
+  `).run(requestId);
+
+  // Log the activation
+  RequestTrackingService.addAuditEntry(
+    parseInt(requestId),
+    userId,
+    'transfer_activated',
+    undefined,
+    'active_transfer',
+    JSON.stringify({ action: 'transfer_activated' }),
+    `Transfer activated by DTA ${userEmail}. Section 4 procedures now in effect.`
+  );
+
+  // Security audit log
+  await auditLog(
+    userId,
+    'TRANSFER_ACTIVATED',
+    `Activated transfer for request #${requestId}`,
+    ipAddress,
+    'info'
+  );
+
+  return new Response(JSON.stringify({ 
+    success: true, 
+    message: 'Transfer activated successfully. Request moved to active transfer status.',
+    newStatus: 'active_transfer'
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+async function signDTARequest(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
+  // Only allow assigned DTA to sign the request
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
+  if (!request) {
+    return new Response(JSON.stringify({ error: 'Request not found or not assigned to you' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  if (request.status !== 'active_transfer') {
+    return new Response(JSON.stringify({ error: 'Request must be in active transfer status to sign' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Check if transfer is completed
+  if (!request.transfer_completed_date) {
+    return new Response(JSON.stringify({ error: 'Transfer must be marked as complete before DTA signature' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Update request with DTA signature and move to SME signature
+  db.query(`
+    UPDATE aft_requests 
+    SET dta_signature_date = unixepoch(),
+        status = 'pending_sme_signature',
+        updated_at = unixepoch()
+    WHERE id = ?
+  `).run(requestId);
+
+  // Log the signature
+  RequestTrackingService.addAuditEntry(requestId, 'dta_signed', 'DTA Signed', 
+    `Request signed by DTA ${userEmail}. Forwarded to SME for Two-Person Integrity signature.`, userEmail);
+
+  // Security audit log
+  await auditLog(
+    userId,
+    'DTA_SIGNATURE',
+    `Signed request #${requestId} as DTA`,
+    ipAddress,
+    'info'
+  );
+
+  return new Response(JSON.stringify({ 
+    success: true, 
+    message: 'DTA signature recorded successfully. Request forwarded to SME for Two-Person Integrity.',
+    newStatus: 'pending_sme_signature'
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 async function completeTransfer(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+  // Only allow assigned DTA to complete the transfer
+  const request = db.query("SELECT * FROM aft_requests WHERE id = ? AND dta_id = ?").get(requestId, userId);
   if (!request) {
     return new Response(JSON.stringify({ error: 'Request not found' }), {
       status: 404,
@@ -683,15 +880,15 @@ async function completeTransfer(db: any, requestId: number, body: any, userId: n
   `).run(filesTransferred, smeUserId, tpiMaintained ? 1 : 0, requestId);
 
   // Log the transfer completion
-  RequestTrackingService.addTimelineEntry(requestId, 'transfer_completed', 'Transfer Completed by DTA', 
+  RequestTrackingService.addAuditEntry(requestId, 'transfer_completed', 'Transfer Completed by DTA', 
     `Transfer completed by ${userEmail}. ${filesTransferred} files transferred. TPI ${tpiMaintained ? 'maintained' : 'not maintained'}`, userEmail);
 
   // Add timeline entry for pending SME signature
-  RequestTrackingService.addTimelineEntry(requestId, 'pending_sme_signature', 'Pending SME Signature', 
+  RequestTrackingService.addAuditEntry(requestId, 'pending_sme_signature', 'Pending SME Signature', 
     `Transfer completed, waiting for SME signature for Two-Person Integrity`, userEmail);
 
   // Security audit log
-  await auditLog('TRANSFER_COMPLETION', userEmail, ipAddress, { 
+  await auditLog(userId, 'TRANSFER_COMPLETION', `Completed transfer for request #${requestId}`, ipAddress, { 
     requestId, 
     filesTransferred,
     smeUserId,

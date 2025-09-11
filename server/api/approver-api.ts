@@ -24,7 +24,8 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
     // GET endpoints
     if (method === 'GET') {
       if (apiPath === 'pending-count') {
-        const result = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status IN ('pending_approver','pending_cpso','submitted')").get() as any;
+        // Only count requests pending ISSM approval, not CPSO
+        const result = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status IN ('pending_approver', 'submitted')").get() as any;
         return new Response(JSON.stringify({ count: result?.count || 0 }), {
           headers: { 'Content-Type': 'application/json' }
         });
@@ -61,8 +62,8 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         }
         const { notes }: { notes?: string } = body;
         
-        // Update request status - approver sends to CPSO for final approval
-        const newStatus = activeRole === UserRole.CPSO ? 'approved' : 'pending_cpso';
+        // Update request status - approver sends to CPSO, CPSO sends to DTA
+        const newStatus = activeRole === UserRole.CPSO ? 'pending_dta' : 'pending_cpso';
         db.prepare(`
           UPDATE aft_requests 
           SET status = ?, 
@@ -77,7 +78,7 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         // Add to history
         const historyAction = activeRole === UserRole.CPSO ? 'CPSO_APPROVED' : 'ISSM_APPROVED';
         const historyNotes = activeRole === UserRole.CPSO ? 
-          (notes || 'Request approved by CPSO - Final approval') : 
+          (notes || 'Request approved by CPSO - Forwarded to DTA') : 
           (notes || 'Request approved by ISSM - Forwarded to CPSO');
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)

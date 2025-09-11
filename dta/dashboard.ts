@@ -7,22 +7,23 @@ export class DTADashboard {
   static async render(user: DTAUser, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get DTA statistics
-    const allRequests = db.query("SELECT COUNT(*) as count FROM aft_requests").get() as any;
+    // Get DTA statistics - filtered by assigned DTA
+    const allRequests = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE dta_id = ?").get(userId) as any;
     const dtaPendingRequests = db.query(`
       SELECT COUNT(*) as count FROM aft_requests 
-      WHERE status = 'pending_dta'
-    `).get() as any;
+      WHERE status = 'pending_dta' AND dta_id = ?
+    `).get(userId) as any;
     const activeTransfers = db.query(`
       SELECT COUNT(*) as count FROM aft_requests 
-      WHERE status = 'active_transfer'
-    `).get() as any;
+      WHERE status = 'active_transfer' AND dta_id = ?
+    `).get(userId) as any;
     const recentRequests = db.query(`
       SELECT * FROM aft_requests 
       WHERE status IN ('pending_dta', 'active_transfer', 'completed')
+        AND dta_id = ?
       ORDER BY updated_at DESC 
       LIMIT 5
-    `).all() as any[];
+    `).all(userId) as any[];
 
     // Build action cards using Templates.adminCard
     const pendingRequestsCard = Templates.adminCard({
@@ -53,24 +54,41 @@ export class DTADashboard {
     // Build recent requests table
     const recentRequestsTable = this.buildRecentRequestsTable(recentRequests);
 
-    // Get anti-virus scan statistics for dashboard
-    const scanStats = db.query(`
-      SELECT 
-        COUNT(CASE WHEN origination_scan_performed = 1 THEN 1 END) as origination_scans,
-        COUNT(CASE WHEN destination_scan_performed = 1 THEN 1 END) as destination_scans,
-        SUM(COALESCE(origination_threats_found, 0) + COALESCE(destination_threats_found, 0)) as total_threats
-      FROM aft_requests
-      WHERE status IN ('active_transfer', 'pending_sme_signature', 'completed', 'disposed')
-    `).get() as any;
+    // Get anti-virus scan statistics for dashboard - only for assigned requests
+    // Check if scan columns exist first
+    let scanStats: any = { origination_scans: 0, destination_scans: 0, total_threats: 0 };
+    
+    try {
+      const columns = db.query("PRAGMA table_info(aft_requests)").all() as Array<{ name: string }>;
+      const columnNames = columns.map(c => c.name);
+      
+      if (columnNames.includes('origination_scan_performed') && 
+          columnNames.includes('destination_scan_performed') &&
+          columnNames.includes('origination_threats_found') &&
+          columnNames.includes('destination_threats_found')) {
+        
+        scanStats = db.query(`
+          SELECT 
+            COUNT(CASE WHEN origination_scan_performed = 1 THEN 1 END) as origination_scans,
+            COUNT(CASE WHEN destination_scan_performed = 1 THEN 1 END) as destination_scans,
+            SUM(COALESCE(origination_threats_found, 0) + COALESCE(destination_threats_found, 0)) as total_threats
+          FROM aft_requests
+          WHERE status IN ('active_transfer', 'pending_sme_signature', 'completed', 'disposed')
+            AND dta_id = ?
+        `).get(userId) as any;
+      }
+    } catch (error) {
+      console.warn('Could not query scan statistics, columns may not exist yet:', error);
+    }
 
     const totalScans = (scanStats?.origination_scans || 0) + (scanStats?.destination_scans || 0);
     const threatsFound = scanStats?.total_threats || 0;
 
     // Build statistics card using DTANavigation.renderQuickStats
     const statsCard = DTANavigation.renderQuickStats([
-      { label: 'Total Requests', value: allRequests?.count || 0, status: 'operational' },
-      { label: 'Pending DTA', value: dtaPendingRequests?.count || 0, status: dtaPendingRequests?.count > 0 ? 'warning' : 'operational' },
-      { label: 'Active Transfers', value: activeTransfers?.count || 0, status: activeTransfers?.count > 0 ? 'info' : 'operational' },
+      { label: 'My Assigned Requests', value: allRequests?.count || 0, status: 'operational' },
+      { label: 'Pending My Action', value: dtaPendingRequests?.count || 0, status: dtaPendingRequests?.count > 0 ? 'warning' : 'operational' },
+      { label: 'My Active Transfers', value: activeTransfers?.count || 0, status: activeTransfers?.count > 0 ? 'info' : 'operational' },
       { label: 'AV Scans', value: totalScans, status: threatsFound > 0 ? 'warning' : 'operational' }
     ]);
 
