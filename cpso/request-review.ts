@@ -1,11 +1,11 @@
 // Request Review Page - Detailed view for approving/rejecting individual requests
 import { ComponentBuilder, Templates } from "../components/ui/server-components";
-import { ApproverNavigation, type ApproverUser } from "./approver-nav";
+import { CPSONavigation, type CPSOUser } from "./cpso-nav";
 import { getDb } from "../lib/database-bun";
 import { FileTextIcon, UserIcon, CalendarIcon, ShieldIcon, ServerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, ClockIcon } from "../components/icons";
 
 export class RequestReviewPage {
-  static async render(user: ApproverUser, requestId: string): Promise<string> {
+  static async render(user: CPSOUser, requestId: string): Promise<string> {
     const db = getDb();
     
     // Get request details
@@ -59,11 +59,11 @@ export class RequestReviewPage {
       </div>
     `;
 
-    return ApproverNavigation.renderLayout(
+    return CPSONavigation.renderLayout(
       'Request Review',
       `Request #${request.request_number || requestId}`,
       user,
-      '/approver/request',
+      '/cpso/request',
       content
     );
   }
@@ -307,7 +307,7 @@ export class RequestReviewPage {
             </p>
             ${ComponentBuilder.button({
               children: 'Back to Pending',
-              onClick: 'window.location.href=\'/approver/pending\'',
+              onClick: 'window.location.href=\'/cpso/pending\'',
               variant: 'secondary',
               className: 'w-full'
             })}
@@ -410,7 +410,7 @@ export class RequestReviewPage {
     });
   }
 
-  private static renderNotFound(user: ApproverUser): string {
+  private static renderNotFound(user: CPSOUser): string {
     const content = `
       <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-12 text-center">
         <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--muted)] mb-4">
@@ -420,16 +420,16 @@ export class RequestReviewPage {
         <p class="text-[var(--muted-foreground)] mb-6">The requested AFT request could not be found.</p>
         ${ComponentBuilder.primaryButton({
           children: 'Back to Pending Requests',
-          onClick: 'window.location.href=\'/approver/pending\''
+          onClick: 'window.location.href=\'/cpso/pending\''
         })}
       </div>
     `;
 
-    return ApproverNavigation.renderLayout(
+    return CPSONavigation.renderLayout(
       'Request Not Found',
       '',
       user,
-      '/approver/request',
+      '/cpso/request',
       content
     );
   }
@@ -440,7 +440,7 @@ export class RequestReviewPage {
         const notes = document.getElementById('approval-notes').value;
         
         if (confirm('Are you sure you want to approve this request?')) {
-          fetch('/api/approver/approve/' + requestId, {
+          fetch('/api/cpso/approve/' + requestId, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ notes })
@@ -449,7 +449,7 @@ export class RequestReviewPage {
           .then(data => {
             if (data.success) {
               alert('Request approved successfully!');
-              window.location.href = '/approver/pending';
+              window.location.href = '/cpso/pending';
             } else {
               alert('Error approving request: ' + data.error);
             }
@@ -463,7 +463,7 @@ export class RequestReviewPage {
         if (reason) {
           const notes = document.getElementById('approval-notes').value;
           
-          fetch('/api/approver/reject/' + requestId, {
+          fetch('/api/cpso/reject/' + requestId, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reason, notes })
@@ -472,7 +472,7 @@ export class RequestReviewPage {
           .then(data => {
             if (data.success) {
               alert('Request rejected successfully.');
-              window.location.href = '/approver/pending';
+              window.location.href = '/cpso/pending';
             } else {
               alert('Error rejecting request: ' + data.error);
             }

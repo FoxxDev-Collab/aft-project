@@ -1,16 +1,16 @@
-// Approver API Endpoints
+// CPSO API Endpoints
 import { getDb } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { UserRole } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
 
-export async function handleApproverAPI(request: Request, path: string, ipAddress: string): Promise<Response> {
-  // Allow APPROVER and CPSO to access
+export async function handleCPSOAPI(request: Request, path: string, ipAddress: string): Promise<Response> {
+  // Check authentication and CPSO role
   const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress);
   if (authResult.response) return authResult.response;
   const activeRole = authResult.session.activeRole || authResult.session.primaryRole;
-  if (activeRole !== UserRole.APPROVER && activeRole !== UserRole.CPSO) {
-    return RoleMiddleware.accessDenied(`This API requires APPROVER or CPSO role. Your current role is ${activeRole?.toUpperCase()}.`);
+  if (activeRole !== UserRole.CPSO) {
+    return RoleMiddleware.accessDenied(`This API requires CPSO role. Your current role is ${activeRole?.toUpperCase()}.`);
   }
 
   const db = getDb();
@@ -18,13 +18,13 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
   const session = authResult.session;
   
   // Parse path to get endpoint
-  const apiPath = path.replace('/api/approver/', '');
+  const apiPath = path.replace('/api/cpso/', '');
   
   try {
     // GET endpoints
     if (method === 'GET') {
       if (apiPath === 'pending-count') {
-        const result = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status IN ('pending_approver','pending_cpso','submitted')").get() as any;
+        const result = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status = 'pending_cpso'").get() as any;
         return new Response(JSON.stringify({ count: result?.count || 0 }), {
           headers: { 'Content-Type': 'application/json' }
         });
@@ -42,7 +42,7 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         return new Response(csv, {
           headers: {
             'Content-Type': 'text/csv',
-            'Content-Disposition': 'attachment; filename="approved-requests.csv"'
+            'Content-Disposition': 'attachment; filename="cpso-approved-requests.csv"'
           }
         });
       }
@@ -52,7 +52,7 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
     if (method === 'POST') {
       const body: any = await request.json();
       
-      // Approve request
+      // Final approve request (CPSO approval)
       if (apiPath.startsWith('approve/')) {
         const requestId = apiPath.split('/')[1];
 
@@ -61,34 +61,29 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         }
         const { notes }: { notes?: string } = body;
         
-        // Update request status - approver sends to CPSO for final approval
-        const newStatus = activeRole === UserRole.CPSO ? 'approved' : 'pending_cpso';
+        // Update request status to approved (final approval)
         db.prepare(`
           UPDATE aft_requests 
-          SET status = ?, 
+          SET status = 'approved', 
               approver_email = ?,
               approver_id = (SELECT id FROM users WHERE email = ?),
               updated_at = unixepoch(),
               approval_notes = ?,
               rejection_reason = NULL
-          WHERE id = ? AND status IN ('pending_approver','pending_cpso','submitted','pending_approval')
-        `).run(newStatus, session.email, session.email, notes || null, requestId);
+          WHERE id = ? AND status = 'pending_cpso'
+        `).run(session.email, session.email, notes || null, requestId);
         
         // Add to history
-        const historyAction = activeRole === UserRole.CPSO ? 'CPSO_APPROVED' : 'ISSM_APPROVED';
-        const historyNotes = activeRole === UserRole.CPSO ? 
-          (notes || 'Request approved by CPSO - Final approval') : 
-          (notes || 'Request approved by ISSM - Forwarded to CPSO');
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
-          VALUES (?, ?, ?, ?, unixepoch())
-        `).run(requestId, historyAction, session.email, historyNotes);
+          VALUES (?, 'CPSO_APPROVED', ?, ?, unixepoch())
+        `).run(requestId, session.email, notes || 'Request approved by CPSO - Final approval');
         
         // Log the action
         await auditLog(
           session.userId,
           'REQUEST_APPROVED',
-          `Approved request #${requestId}`,
+          `CPSO approved request #${requestId}`,
           ipAddress,
           'info'
         );
@@ -123,20 +118,20 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
               updated_at = unixepoch(),
               rejection_reason = ?,
               approval_notes = ?
-          WHERE id = ? AND status IN ('pending_approver','pending_cpso','submitted','pending_approval')
+          WHERE id = ? AND status = 'pending_cpso'
         `).run(session.email, session.email, reason, notes || null, requestId);
         
         // Add to history
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
-          VALUES (?, 'REJECTED', ?, ?, unixepoch())
+          VALUES (?, 'CPSO_REJECTED', ?, ?, unixepoch())
         `).run(requestId, session.email, `Reason: ${reason}. ${notes || ''}`);
         
         // Log the action
         await auditLog(
           session.userId,
           'REQUEST_REJECTED',
-          `Rejected request #${requestId}: ${reason}`,
+          `CPSO rejected request #${requestId}: ${reason}`,
           ipAddress,
           'info'
         );
@@ -151,7 +146,6 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         const { type }: { type: 'monthly' | 'quarterly' | 'annual' } = body;
         
         let dateFilter = '';
-        const now = new Date();
         
         switch(type) {
           case 'monthly':
@@ -193,10 +187,10 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
     });
     
   } catch (error) {
-    console.error('Approver API error:', error);
+    console.error('CPSO API error:', error);
     await auditLog(
       session.userId,
-      'APPROVER_API_ERROR',
+      'CPSO_API_ERROR',
       `API error on ${path}: ${error}`,
       ipAddress,
       { error: String(error) }
@@ -228,7 +222,7 @@ function generateCSV(requests: any[]): string {
 }
 
 function generatePrintableReport(requests: any[], type: string, approverEmail: string): string {
-  const reportTitle = `${type.charAt(0).toUpperCase() + type.slice(1)} Report`;
+  const reportTitle = `CPSO ${type.charAt(0).toUpperCase() + type.slice(1)} Report`;
   const generatedDate = new Date().toLocaleString();
 
   const summary = {
@@ -279,7 +273,7 @@ function generatePrintableReport(requests: any[], type: string, approverEmail: s
     <body>
         <div class="header">
             <h1>${reportTitle}</h1>
-            <p><strong>Approver:</strong> ${approverEmail}</p>
+            <p><strong>CPSO:</strong> ${approverEmail}</p>
             <p><strong>Generated on:</strong> ${generatedDate}</p>
         </div>
 

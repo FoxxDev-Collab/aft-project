@@ -4,7 +4,9 @@ import { RoleMiddleware } from "../../middleware/role-middleware";
 import { RequestorDashboard } from "../../requestor/dashboard";
 import { RequestorRequests } from "../../requestor/requests";
 import { RequestWizard } from "../../requestor/request-wizard";
+import { RequestorAllRequests } from "../../requestor/all-requests";
 import { createHtmlPage } from "../utils";
+import { ChevronLeftIcon } from "../../components/icons";
 
 const db = getDb();
 
@@ -37,6 +39,18 @@ export async function handleRequestorRoutes(request: Request, path: string, ipAd
         "AFT - My Requests",
         requestsHtml,
         RequestorRequests.getScript()
+      ), {
+        headers: { "Content-Type": "text/html" }
+      });
+
+    case '/requestor/all-requests':
+      const allUrl = new URL(request.url);
+      const allViewMode = (allUrl.searchParams.get('view') as 'table' | 'timeline') || 'table';
+      const allHtml = await RequestorAllRequests.render(user, allViewMode);
+      return new Response(createHtmlPage(
+        "AFT - All Requests",
+        allHtml,
+        RequestorAllRequests.getScript()
       ), {
         headers: { "Content-Type": "text/html" }
       });
@@ -92,14 +106,17 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
   }
   
   const canSubmit = requestData.status === 'draft';
-  const canEdit = ['draft', 'submitted'].includes(requestData.status);
+  const canEdit = ['draft', 'submitted', 'rejected'].includes(requestData.status);
   
   const detailHtml = `
     <div class="min-h-screen bg-[var(--background)]">
       <div class="container mx-auto px-4 py-8">
         <div class="mb-6">
           <div class="flex items-center gap-2 mb-4">
-            <a href="/requestor/requests" class="text-[var(--primary)] hover:underline">← Back to My Requests</a>
+            <a href="/requestor/requests" class="text-[var(--primary)] hover:underline inline-flex items-center gap-1">
+              <span class="inline-block align-middle">${ChevronLeftIcon({ size: 16 })}</span>
+              <span>Back to My Requests</span>
+            </a>
           </div>
           <h1 class="text-3xl font-bold text-[var(--foreground)]">Request Details</h1>
           <p class="text-[var(--muted-foreground)]">Request #${requestData.request_number}</p>
@@ -108,6 +125,13 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <!-- Main Content -->
           <div class="lg:col-span-2 space-y-6">
+            ${requestData.status === 'rejected' && requestData.rejection_reason ? `
+            <div class="border-2 border-[var(--destructive)] bg-[var(--destructive)]/10 text-[var(--destructive)] rounded-lg p-4">
+              <div class="font-semibold mb-1">Request Rejected</div>
+              <div class="text-sm">Reason: ${requestData.rejection_reason}</div>
+              <div class="text-xs text-[var(--muted-foreground)] mt-1">You may edit the request to address the feedback and resubmit for ISSM/ISSO review.</div>
+            </div>
+            ` : ''}
             <!-- Request Information -->
             <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6">
               <h2 class="text-xl font-semibold mb-4">Request Information</h2>
@@ -140,15 +164,23 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
               <h2 class="text-xl font-semibold mb-4">Files to Transfer</h2>
               ${files.length > 0 ? `
                 <div class="space-y-2">
-                  ${files.map((file: any) => `
-                    <div class="flex items-center justify-between p-3 bg-[var(--muted)] rounded">
-                      <div>
-                        <div class="font-medium">${file.name}</div>
-                        <div class="text-sm text-[var(--muted-foreground)]">${file.size || 'Size not specified'}</div>
+                  ${files.map((file: any) => {
+                    const base = (file?.name || '').toString();
+                    const ext = (file?.type || '').toString();
+                    const fullName = base && ext ? `${base}.${ext}` : base || '(unnamed)';
+                    const size = (file?.size || '').toString().trim();
+                    const sizeDisplay = size ? size : 'Size not specified';
+                    const classification = file?.classification || 'No classification';
+                    return `
+                      <div class="flex items-center justify-between p-3 bg-[var(--muted)] rounded">
+                        <div>
+                          <div class="font-medium">${fullName}</div>
+                          <div class="text-xs text-[var(--muted-foreground)]">${sizeDisplay}</div>
+                        </div>
+                        <div class="text-sm text-[var(--muted-foreground)]">${classification}</div>
                       </div>
-                      <div class="text-sm text-[var(--muted-foreground)]">${file.classification || 'No classification'}</div>
-                    </div>
-                  `).join('')}
+                    `;
+                  }).join('')}
                 </div>
               ` : '<p class="text-[var(--muted-foreground)]">No files specified</p>'}
             </div>
@@ -202,6 +234,12 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
                   <span class="text-sm text-[var(--muted-foreground)]">Last Updated</span>
                   <span class="text-sm">${new Date(requestData.updated_at * 1000).toLocaleDateString()}</span>
                 </div>
+                ${requestData.rejection_reason ? `
+                <div>
+                  <label class="text-sm font-medium text-[var(--muted-foreground)]">Rejection Reason</label>
+                  <p class="text-sm text-[var(--destructive)] mt-1">${requestData.rejection_reason}</p>
+                </div>
+                ` : ''}
               </div>
             </div>
             

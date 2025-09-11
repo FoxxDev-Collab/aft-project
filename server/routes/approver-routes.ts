@@ -7,6 +7,7 @@ import { PendingApprovalsPage } from "../../approver/pending";
 import { ApprovedRequestsPage } from "../../approver/approved";
 import { RequestReviewPage } from "../../approver/request-review";
 import { ApproverReportsPage } from "../../approver/reports";
+import { ApproverAllRequests } from "../../approver/all-requests";
 import { createHtmlPage } from "../utils";
 
 export async function handleApproverRoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
@@ -48,7 +49,13 @@ export async function handleApproverRoutes(request: Request, path: string, ipAdd
       htmlContent = await ApproverReportsPage.render(user);
       scriptContent = ApproverReportsPage.getScript();
       title = 'AFT - Approver Reports';
-    } else if (path.startsWith('/approver/request/')) {
+    } else if (path === '/approver/all-requests') {
+      const url = new URL(request.url);
+      const viewMode = url.searchParams.get('view') as 'table' | 'timeline' || 'table';
+      htmlContent = await ApproverAllRequests.render(user, viewMode);
+      scriptContent = ApproverAllRequests.getScript();
+      title = 'AFT - All Requests';
+    } else if (path.startsWith('/approver/request/') || path.startsWith('/approver/review/')) {
       const requestId = path.split('/')[3];
       if (requestId) {
         htmlContent = await RequestReviewPage.render(user, requestId);

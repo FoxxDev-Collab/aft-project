@@ -166,6 +166,31 @@ export class RoleSelectionPage {
             justify-content: center;
         }
         
+        .role-actions button {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border: 1px solid var(--primary);
+            border-radius: var(--radius);
+            padding: 0.625rem 1rem; /* 10px 16px */
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: var(--shadow-sm);
+            font-family: var(--font-sans);
+        }
+
+        .role-actions button:hover {
+            background: rgb(37, 99, 235);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .role-actions button:focus {
+            outline: 2px solid var(--ring);
+            outline-offset: 2px;
+        }
+        
         .security-notice {
             background: rgba(59, 130, 246, 0.1);
             border: 1px solid var(--primary);
@@ -278,7 +303,7 @@ export class RoleSelectionPage {
                 case 'approver':
                     return '/dashboard/approver';
                 case 'cpso':
-                    return '/dashboard/cpso';
+                    return '/cpso';
                 case 'dta':
                     return '/dashboard/dta';
                 case 'sme':

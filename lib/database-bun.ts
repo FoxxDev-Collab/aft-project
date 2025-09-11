@@ -116,23 +116,6 @@ function createTables() {
     )
   `);
 
-  // Drive Inventory
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS drive_inventory (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      serial_number TEXT UNIQUE NOT NULL,
-      model TEXT NOT NULL,
-      capacity TEXT NOT NULL,
-      media_controller TEXT NOT NULL,
-      media_type TEXT DEFAULT 'SSD',
-      classification TEXT NOT NULL,
-      status TEXT DEFAULT 'available',
-      notes TEXT,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )
-  `);
-
   // Media Drives for Media Custodian Management
   db.exec(`
     CREATE TABLE IF NOT EXISTS media_drives (
@@ -254,7 +237,7 @@ function createTables() {
       compression_required BOOLEAN,
       files_list TEXT,
       additional_file_list_attached BOOLEAN DEFAULT 0,
-      selected_drive_id INTEGER REFERENCES drive_inventory(id),
+      selected_drive_id INTEGER REFERENCES media_drives(id),
       requested_start_date INTEGER,
       requested_end_date INTEGER,
       urgency_level TEXT,
@@ -288,24 +271,6 @@ function createTables() {
     )
   `);
 
-  // Drive tracking
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS drive_tracking (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      drive_id INTEGER NOT NULL REFERENCES drive_inventory(id),
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      custodian_id INTEGER NOT NULL REFERENCES users(id),
-      source_is TEXT NOT NULL,
-      destination_is TEXT NOT NULL,
-      issued_at INTEGER NOT NULL,
-      expected_return_at INTEGER,
-      returned_at INTEGER,
-      status TEXT DEFAULT 'issued',
-      issue_notes TEXT,
-      return_notes TEXT,
-      created_at INTEGER DEFAULT (unixepoch())
-    )
-  `);
 
   // CAC Signatures
   db.exec(`
@@ -365,7 +330,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return await Bun.password.verify(password, hash);
 }
 
-// Initialize database with default users
+// Initialize database with default users and drives
 async function initializeDatabase() {
   try {
     // Check if admin user exists
@@ -479,6 +444,87 @@ async function initializeDatabase() {
         console.log(`✓ Test ${testUser.title} user created: ${testUser.email} (Roles: ${[testUser.primaryRole, ...testUser.additionalRoles].join(', ')})`);
       }
     }
+
+
+    // Seed media drives for media custodian if empty
+    const mediaDriveCount = db.query("SELECT COUNT(*) as count FROM media_drives").get() as any;
+    
+    if (mediaDriveCount.count === 0) {
+      const testMediaDrives = [
+        {
+          serial_number: 'MD-SSD-001-2024',
+          media_control_number: 'MCN-001-2024',
+          type: 'SSD',
+          model: 'Samsung 980 PRO',
+          capacity: '1TB',
+          location: 'Secure Storage A-1',
+          status: 'available'
+        },
+        {
+          serial_number: 'MD-SSD-002-2024',
+          media_control_number: 'MCN-002-2024',
+          type: 'SSD',
+          model: 'Western Digital Black SN850X',
+          capacity: '2TB',
+          location: 'Secure Storage A-2',
+          status: 'available'
+        },
+        {
+          serial_number: 'MD-HDD-003-2024',
+          media_control_number: 'MCN-003-2024',
+          type: 'HDD',
+          model: 'Seagate IronWolf Pro',
+          capacity: '4TB',
+          location: 'Secure Storage B-1',
+          status: 'available'
+        },
+        {
+          serial_number: 'MD-SSD-004-2024',
+          media_control_number: 'MCN-004-2024',
+          type: 'SSD-T',
+          model: 'Crucial MX4',
+          capacity: '500GB',
+          location: 'Secure Storage A-3',
+          status: 'available'
+        },
+        {
+          serial_number: 'MD-USB-005-2024',
+          media_control_number: 'MCN-005-2024',
+          type: 'USB',
+          model: 'Kingston DataTraveler',
+          capacity: '64GB',
+          location: 'Secure Storage C-1',
+          status: 'available'
+        },
+        {
+          serial_number: 'MD-DVD-006-2024',
+          media_control_number: 'MCN-006-2024',
+          type: 'DVD-R',
+          model: 'Verbatim DVD-R',
+          capacity: '4.7GB',
+          location: 'Secure Storage D-1',
+          status: 'maintenance'
+        }
+      ];
+
+      for (const drive of testMediaDrives) {
+        db.query(`
+          INSERT INTO media_drives (serial_number, media_control_number, type, model, capacity, location, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          drive.serial_number,
+          drive.media_control_number,
+          drive.type,
+          drive.model,
+          drive.capacity,
+          drive.location,
+          drive.status
+        );
+      }
+
+      console.log(`✓ Seeded ${testMediaDrives.length} drives in media drives inventory`);
+    }
+
   } catch (error) {
     console.error('Database initialization failed:', error);
   }

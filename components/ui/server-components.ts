@@ -2,6 +2,7 @@
 // This file provides utilities to use our UI components in server-rendered HTML
 
 import * as UI from './index';
+import { ListIcon, CalendarIcon } from '../icons';
 
 // Helper class to build HTML with components
 export class ComponentBuilder {
@@ -131,14 +132,20 @@ export class ComponentBuilder {
           onclick="switchView('table')"
           type="button"
         >
-          📋 Table View
+          <span class="inline-flex items-center gap-2">
+            <span class="inline-block align-middle">${ListIcon({ size: 16 })}</span>
+            <span>Table View</span>
+          </span>
         </button>
         <button 
           class="view-toggle-button ${activeView === 'timeline' ? 'active' : ''}" 
           onclick="switchView('timeline')"
           type="button"
         >
-          📅 Timeline View
+          <span class="inline-flex items-center gap-2">
+            <span class="inline-block align-middle">${CalendarIcon({ size: 16 })}</span>
+            <span>Timeline View</span>
+          </span>
         </button>
       </div>
     `;

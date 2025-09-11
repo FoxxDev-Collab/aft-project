@@ -3,7 +3,7 @@ import { ComponentBuilder, Templates } from "../components/ui/server-components"
 import { RequestorNavigation, type RequestorUser } from "./requestor-nav";
 import { getDb } from "../lib/database-bun";
 import { AFT_STATUS_LABELS, AFTStatus } from "../lib/database-bun";
-import { FileTextIcon, ClockIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, DownloadIcon, PlusIcon } from "../components/icons";
+import { FileTextIcon, ClockIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, DownloadIcon, PlusIcon, ArrowRightIcon } from "../components/icons";
 
 export class RequestorRequests {
   static async render(user: RequestorUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
@@ -38,7 +38,15 @@ export class RequestorRequests {
         {
             key: 'systems',
             label: 'Systems',
-            render: (value: any, row: any) => `<div><p class="font-medium">${row.source_system || 'N/A'} → ${row.dest_system || 'N/A'}</p></div>`
+            render: (value: any, row: any) => `
+              <div>
+                <p class="font-medium flex items-center gap-1">
+                  <span>${row.source_system || 'N/A'}</span>
+                  <span class="inline-block align-middle">${ArrowRightIcon({ size: 16 })}</span>
+                  <span>${row.dest_system || 'N/A'}</span>
+                </p>
+              </div>
+            `
         },
         {
             key: 'transfer_type',

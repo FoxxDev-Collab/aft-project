@@ -14,6 +14,7 @@ import { handleApproverRoutes } from "./server/routes/approver-routes";
 import { handleMediaCustodianRoutes } from "./server/routes/media-custodian-routes";
 import { handleDTARoutes } from "./server/routes/dta-routes";
 import { handleSMERoutes } from "./server/routes/sme-routes";
+import { handleCPSORoutes } from "./server/routes/cpso-routes";
 
 // Initialize security
 initializeSecurity();
@@ -67,6 +68,9 @@ Bun.serve({
     // DTA routes
     } else if (path.startsWith('/dta')) {
       response = await handleDTARoutes(request, path, ipAddress);
+    // CPSO routes
+    } else if (path.startsWith('/cpso')) {
+      response = await handleCPSORoutes(request, path, ipAddress);
     } else {
       // Main application routes
       switch (path) {

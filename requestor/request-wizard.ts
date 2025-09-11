@@ -29,6 +29,7 @@ export interface AFTRequestDraft {
   destination_poc?: string;
   destination_address?: string;
   media_encrypted?: boolean;
+  destinations_json?: string;
 }
 
 export class RequestWizard {
@@ -69,6 +70,17 @@ export class RequestWizard {
         </div>
       </div>
     ` : '';
+
+    // Prepare initial destinations JSON from existing draft transfer_data
+    const initialDestinationsJson = (() => {
+      try {
+        const td = existingDraft?.transfer_data ? JSON.parse(existingDraft.transfer_data) : null;
+        const arr = td?.destinations || [];
+        return JSON.stringify(arr);
+      } catch {
+        return '[]';
+      }
+    })();
 
     // Section I - Media Information
     const sectionI = `
@@ -193,6 +205,15 @@ export class RequestWizard {
               ]
             })
           })}
+
+          <!-- Extra Destination rows (inline) -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-medium text-[var(--foreground)]">Add more Destinations</h4>
+              <button type="button" class="action-btn secondary" onclick="addDestination()">+ Add Destination</button>
+            </div>
+            <div id="destinations-list" class="space-y-2"></div>
+          </div>
           
           ${FormComponents.formField({
             label: 'Media Disposition',
@@ -243,10 +264,10 @@ export class RequestWizard {
               value: existingDraft?.transfer_type || '',
               required: true,
               options: [
-                { value: 'High-to-Low', label: 'High-to-Low (Downgrade transfer)' },
-                { value: 'Low-to-High', label: 'Low-to-High (Upgrade transfer)' },
-                { value: 'Low-to-Low', label: 'Low-to-Low (Same level)' },
-                { value: 'Intra-Domain', label: 'Intra-Domain (Within same domain)' },
+                { value: 'High-to-Low', label: 'High-to-Low' },
+                { value: 'Low-to-High', label: 'Low-to-High' },
+                { value: 'Low-to-Low', label: 'Low-to-Low' },
+                { value: 'Intra-Domain', label: 'Intra-Domain' },
               ]
             })
           })}
@@ -448,6 +469,8 @@ export class RequestWizard {
         <form id="aft-request-form" class="space-y-8">
           <input type="hidden" name="draft_id" value="${draftId || ''}" />
           <input type="hidden" name="requestor_id" value="${userId}" />
+          <input type="hidden" id="initial-destinations" value='${initialDestinationsJson.replace(/'/g, "&#39;").replace(/</g, "&lt;")}' />
+          <input type="hidden" name="destinations_json" id="destinations_json" value='' />
 
           <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6 space-y-8" id="form-container">
             ${sectionI}
@@ -469,7 +492,7 @@ export class RequestWizard {
   static getScript(): string {
     return `
       let fileRowCount = 1;
-{{ ... }}
+      let destinations = [];
 
       document.addEventListener('DOMContentLoaded', function() {
         loadDTAs();
@@ -494,6 +517,24 @@ export class RequestWizard {
         if (dtaSelect && dtaSelect.value) {
           validateDTAAndPopulate();
         }
+
+        // Initialize destinations list from hidden input
+        try {
+          const initEl = document.getElementById('initial-destinations');
+          if (initEl && initEl.value) {
+            const parsed = JSON.parse(initEl.value);
+            if (Array.isArray(parsed)) {
+              // extras exclude the first (primary) destination
+              const extras = parsed.slice(1).map(function(d){
+                return { is: d?.is || '', classification: d?.classification || '' };
+              });
+              destinations = extras;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse initial destinations');
+        }
+        renderDestinations();
       });
 
       function generateControlNumber() {
@@ -574,33 +615,73 @@ export class RequestWizard {
         fileRowCount++;
       }
 
+      function renderDestinations() {
+        const container = document.getElementById('destinations-list');
+        if (!container) return;
+        container.innerHTML = destinations.map(function(dest, idx) {
+          var isVal = (dest && dest.is) ? dest.is : '';
+          var clsVal = (dest && dest.classification) ? dest.classification : '';
+          var options = ['','UNCLASSIFIED','CUI','CONFIDENTIAL','SECRET','TOP SECRET','TOP SECRET//SCI']
+            .map(function(v){
+              var sel = (v === clsVal) ? ' selected' : '';
+              return '<option value="' + v + '"' + sel + '>' + (v || 'Classification') + '</option>';
+            }).join('');
+          return (
+            '<div class="grid grid-cols-1 md:grid-cols-3 gap-2" data-dest-index="' + idx + '">' +
+              '<input type="text" placeholder="Destination IS" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" value="' + isVal + '" oninput="updateDestination(' + idx + ', &quot;is&quot;, this.value)" />' +
+              '<select class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" onchange="updateDestination(' + idx + ', &quot;classification&quot;, this.value)">' + options + '</select>' +
+              '<button type="button" class="px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded" onclick="removeDestination(' + idx + ')">Remove</button>' +
+            '</div>'
+          );
+        }).join('');
+      }
+
+      function addDestination() {
+        destinations.push({ is: '', classification: '' });
+        renderDestinations();
+      }
+
+      function removeDestination(index) {
+        destinations.splice(index, 1);
+        renderDestinations();
+      }
+
+      function updateDestination(index, key, value) {
+        if (!destinations[index]) destinations[index] = { is: '', classification: '' };
+        destinations[index][key] = value;
+      }
+
       function createFileRowHTML(index) {
         return \`
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-[var(--background)] border border-[var(--border)] rounded-md" data-file-index="\${index}">
-            <div>
-              <label class="block text-xs font-medium text-[var(--foreground)] mb-1">File Name</label>
-              <input type="text" name="files[\${index}][name]" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-[var(--foreground)] mb-1">File Type</label>
-              <input type="text" name="files[\${index}][type]" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" />
-            </div>
-            <div class="flex items-end gap-2">
-              <div class="flex-1">
-                <label class="block text-xs font-medium text-[var(--foreground)] mb-1">Classification</label>
-                <select name="files[\${index}][classification]" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]">
-                  <option value="">Select classification</option>
-                  <option value="UNCLASSIFIED">UNCLASSIFIED</option>
-                  <option value="CUI">CUI</option>
-                  <option value="CONFIDENTIAL">CONFIDENTIAL</option>
-                  <option value="SECRET">SECRET</option>
-                  <option value="TOP SECRET">TOP SECRET</option>
-                  <option value="TOP SECRET//SCI">TOP SECRET//SCI</option>
-                </select>
-              </div>
-              <button type="button" onclick="removeFileRow(\${index})" class="px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded">Remove</button>
-            </div>
-          </div>
+          <div class=\"grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-[var(--background)] border border-[var(--border)] rounded-md\" data-file-index=\"\${index}\">\n
+            <div>\n
+              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">File Name</label>\n
+              <input type=\"text\" name=\"files[\${index}][name]\" placeholder=\"e.g., dataset\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
+            </div>\n
+            <div>\n
+              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Extension</label>\n
+              <input type=\"text\" name=\"files[\${index}][type]\" placeholder=\"e.g., csv\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
+            </div>\n
+            <div>\n
+              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Size</label>\n
+              <input type=\"text\" name=\"files[\${index}][size]\" placeholder=\"e.g., 12 MB\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
+            </div>\n
+            <div class=\"flex items-end gap-2\">\n
+              <div class=\"flex-1\">\n
+                <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Classification</label>\n
+                <select name=\"files[\${index}][classification]\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\">\n
+                  <option value=\"\">Select classification</option>\n
+                  <option value=\"UNCLASSIFIED\">UNCLASSIFIED</option>\n
+                  <option value=\"CUI\">CUI</option>\n
+                  <option value=\"CONFIDENTIAL\">CONFIDENTIAL</option>\n
+                  <option value=\"SECRET\">SECRET</option>\n
+                  <option value=\"TOP SECRET\">TOP SECRET</option>\n
+                  <option value=\"TOP SECRET//SCI\">TOP SECRET//SCI</option>\n
+                </select>\n
+              </div>\n
+              <button type=\"button\" onclick=\"removeFileRow(\${index})\" class=\"px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded\">Remove</button>\n
+            </div>\n
+          </div>\n
         \`;
       }
 
@@ -619,10 +700,19 @@ export class RequestWizard {
           const idx = row.getAttribute('data-file-index');
           const name = row.querySelector('[name="files[' + idx + '][name]"]')?.value;
           const type = row.querySelector('[name="files[' + idx + '][type]"]')?.value;
+          const size = row.querySelector('[name="files[' + idx + '][size]"]')?.value;
           const classification = row.querySelector('[name="files[' + idx + '][classification]"]')?.value;
-          if (name && type && classification) { files.push({ name: name, type: type, classification: classification }); }
+          if (name && classification) { files.push({ name: name, type: type || '', size: size || '', classification: classification }); }
         });
         data.files = JSON.stringify(files);
+        // compose destinations as [primary, ...extras]
+        const primaryIsEl = document.querySelector('input[name="destination_is"]');
+        const primaryClsEl = document.querySelector('select[name="destination_classification"]');
+        const primary = { is: (primaryIsEl?.value || ''), classification: (primaryClsEl?.value || '') };
+        const allDest = [primary].concat(destinations.map(function(d){ return { is: d.is || '', classification: d.classification || '' }; }));
+        const destField = document.getElementById('destinations_json');
+        if (destField) { destField.value = JSON.stringify(allDest); }
+        data.destinations_json = destField ? destField.value : JSON.stringify(allDest);
         data.status = 'draft';
         const response = await fetch('/api/requestor/save-draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         if (response.ok) {

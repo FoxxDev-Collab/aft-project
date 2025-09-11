@@ -1,52 +1,52 @@
-// Approver Dashboard - Main approver landing page
+// CPSO Dashboard - Main CPSO landing page
 import { ComponentBuilder, Templates } from "../components/ui/server-components";
-import { ApproverNavigation, type ApproverUser } from "./approver-nav";
+import { CPSONavigation, type CPSOUser } from "./cpso-nav";
 import { getDb, AFTStatus } from "../lib/database-bun";
 
-export class ApproverDashboard {
-  static async render(user: ApproverUser, userId: number): Promise<string> {
+export class CPSODashboard {
+  static async render(user: CPSOUser, userId: number): Promise<string> {
     const db = getDb();
 
-    // Approver-centric metrics
+    // CPSO-centric metrics - only pending_cpso requests
     const pendingCount = db.query(`
       SELECT COUNT(*) as count FROM aft_requests 
-      WHERE status NOT IN ('approved','rejected','completed','cancelled','draft')
+      WHERE status = 'pending_cpso'
     `).get() as any;
 
     const approved7d = db.query(`
       SELECT COUNT(*) as count FROM aft_requests 
-      WHERE status = 'approved' AND updated_at >= (unixepoch() - 7*24*60*60)
-    `).get() as any;
+      WHERE status = 'approved' AND approver_email = ? AND updated_at >= (unixepoch() - 7*24*60*60)
+    `).get(user.email) as any;
 
     const rejected7d = db.query(`
       SELECT COUNT(*) as count FROM aft_requests 
-      WHERE status = 'rejected' AND updated_at >= (unixepoch() - 7*24*60*60)
-    `).get() as any;
+      WHERE status = 'rejected' AND approver_email = ? AND updated_at >= (unixepoch() - 7*24*60*60)
+    `).get(user.email) as any;
 
-    // Pending queue
+    // Pending queue - only requests awaiting CPSO approval
     const pendingQueue = db.query(`
       SELECT r.id, r.request_number, r.requestor_id, r.transfer_type, r.classification, r.status, r.created_at, r.updated_at,
              u.first_name || ' ' || u.last_name as requestor_name,
              u.email as requestor_email
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
-      WHERE r.status NOT IN ('approved','rejected','completed','cancelled','draft')
+      WHERE r.status = 'pending_cpso'
       ORDER BY r.updated_at DESC
       LIMIT 25
     `).all() as any[];
 
-    // Recently approved
+    // Recently approved by this CPSO
     const recentApproved = db.query(`
       SELECT r.id, r.request_number, r.transfer_type, r.classification, r.updated_at
       FROM aft_requests r
-      WHERE r.status = 'approved'
+      WHERE r.status = 'approved' AND r.approver_email = ?
       ORDER BY r.updated_at DESC
       LIMIT 10
-    `).all() as any[];
+    `).all(user.email) as any[];
 
     // KPI stats
-    const statsCard = ApproverNavigation.renderQuickStats([
-      { label: 'Pending Queue', value: pendingCount?.count || 0, status: (pendingCount?.count || 0) > 0 ? 'warning' : 'operational' },
+    const statsCard = CPSONavigation.renderQuickStats([
+      { label: 'Pending CPSO Review', value: pendingCount?.count || 0, status: (pendingCount?.count || 0) > 0 ? 'warning' : 'operational' },
       { label: 'Approved (7d)', value: approved7d?.count || 0, status: 'operational' },
       { label: 'Rejected (7d)', value: rejected7d?.count || 0, status: 'operational' },
       { label: 'SLA Risk', value: this.getAgingRisk(pendingQueue), status: 'warning' }
@@ -55,8 +55,8 @@ export class ApproverDashboard {
     const content = `
       <div class="space-y-8">
         ${ComponentBuilder.sectionHeader({
-          title: 'Approver Dashboard',
-          description: 'Review and manage AFT requests awaiting your decision'
+          title: 'CPSO Dashboard',
+          description: 'Final review and approval of AFT requests'
         })}
 
         <div>
@@ -65,7 +65,7 @@ export class ApproverDashboard {
         </div>
 
         <div>
-          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-4">Pending Queue</h3>
+          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-4">Pending CPSO Reviews</h3>
           ${this.buildPendingTable(pendingQueue)}
         </div>
 
@@ -76,11 +76,11 @@ export class ApproverDashboard {
       </div>
     `;
 
-    return ApproverNavigation.renderLayout(
+    return CPSONavigation.renderLayout(
       'Dashboard',
-      'Approver Operations and Review',
+      'CPSO Operations and Final Review',
       user,
-      '/approver',
+      '/cpso',
       content
     );
   }
@@ -222,7 +222,7 @@ export class ApproverDashboard {
   static getScript(): string {
     return `
       function reviewRequest(requestId) {
-        window.location.href = '/approver/request/' + requestId;
+        window.location.href = '/cpso/request/' + requestId;
       }
     `;
   }

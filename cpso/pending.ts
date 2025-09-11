@@ -1,14 +1,14 @@
-// Pending Approvals Page - Shows all requests awaiting approval
+// Pending CPSO Reviews Page - Shows all requests awaiting CPSO approval
 import { ComponentBuilder, Templates } from "../components/ui/server-components";
-import { ApproverNavigation, type ApproverUser } from "./approver-nav";
+import { CPSONavigation, type CPSOUser } from "./cpso-nav";
 import { getDb } from "../lib/database-bun";
 import { ClockIcon, AlertCircleIcon, ChevronRightIcon, FilterIcon, SearchIcon } from "../components/icons";
 
-export class PendingApprovalsPage {
-  static async render(user: ApproverUser, userId: number): Promise<string> {
+export class PendingCPSOReviewsPage {
+  static async render(user: CPSOUser, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get all pending requests
+    // Get all requests pending CPSO review
     const pendingRequests = db.query(`
       SELECT 
         r.*,
@@ -16,7 +16,7 @@ export class PendingApprovalsPage {
         u.first_name || ' ' || u.last_name as requestor_name
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
-      WHERE r.status NOT IN ('approved','rejected','completed','cancelled','draft')
+      WHERE r.status = 'pending_cpso'
       ORDER BY r.created_at DESC
     `).all() as any[];
 
@@ -87,12 +87,12 @@ export class PendingApprovalsPage {
     const table = ComponentBuilder.table({
       columns,
       rows: tableData,
-      emptyMessage: 'No pending requests found.'
+      emptyMessage: 'No requests pending CPSO review.'
     });
 
     const tableContainer = ComponentBuilder.tableContainer({
-      title: 'Pending Approvals',
-      description: 'Review and process AFT requests that require your approval.',
+      title: 'Pending CPSO Reviews',
+      description: 'Final review and approval of AFT requests that have been approved by ISSM.',
       table
     });
 
@@ -102,11 +102,11 @@ export class PendingApprovalsPage {
       </div>
     `;
 
-    return ApproverNavigation.renderLayout(
-      'Pending Approvals',
-      'Review and approve AFT requests',
+    return CPSONavigation.renderLayout(
+      'Pending Reviews',
+      'Final review and approval of AFT requests',
       user,
-      '/approver/pending',
+      '/cpso/pending',
       content
     );
   }
@@ -114,12 +114,12 @@ export class PendingApprovalsPage {
     static getScript(): string {
     return `
       function reviewRequest(requestId) {
-        window.location.href = '/approver/review/' + requestId;
+        window.location.href = '/cpso/review/' + requestId;
       }
       
       function viewRequest(requestId) {
         // This could open a modal with more details, for now, it's same as review
-        window.location.href = '/approver/review/' + requestId;
+        window.location.href = '/cpso/review/' + requestId;
       }
     `;
   }

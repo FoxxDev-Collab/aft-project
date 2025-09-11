@@ -6,6 +6,7 @@ import { handleApproverAPI } from "./approver-api";
 import { handleMediaCustodianAPI } from "./media-custodian-api";
 import { handleDTAAPI } from "./dta-api";
 import { handleSMEAPI } from "./sme-api";
+import { handleCPSOAPI } from "./cpso-api";
 import { handleTimelineAPI } from "./timeline-api";
 
 export async function handleAPI(request: Request, path: string, ipAddress: string): Promise<Response> {
@@ -27,6 +28,12 @@ export async function handleAPI(request: Request, path: string, ipAddress: strin
   // Approver APIs
   if (path.startsWith('/api/approver/')) {
     response = await handleApproverAPI(request, path, ipAddress);
+    if (response) return response;
+  }
+  
+  // CPSO APIs
+  if (path.startsWith('/api/cpso/')) {
+    response = await handleCPSOAPI(request, path, ipAddress);
     if (response) return response;
   }
   

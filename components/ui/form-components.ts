@@ -155,7 +155,7 @@ export class FormComponents {
 
   // File list component for multiple files with types and classifications
   static fileListInput(options: {
-    files?: Array<{ name: string; type: string; classification: string }>;
+    files?: Array<{ name: string; type: string; size?: string; classification: string }>;
     maxFiles?: number;
   }): string {
     const files = options.files || [];
@@ -184,26 +184,14 @@ export class FormComponents {
             Maximum ${maxFiles} files can be listed here. Additional files can be listed on separate sheets.
           </div>
         </div>
-        
-        <div class="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            name="additional_file_list_attached"
-            id="additional_file_list_attached"
-            class="h-4 w-4 rounded border-[var(--border)] text-[var(--primary)]"
-          />
-          <label for="additional_file_list_attached" class="text-sm text-[var(--foreground)]">
-            Additional File List(s) Attached
-          </label>
-        </div>
       </div>
     `;
   }
 
   // Individual file row
-  static fileRow(index: number, file?: { name: string; type: string; classification: string }): string {
+  static fileRow(index: number, file?: { name: string; type: string; size?: string; classification: string }): string {
     return `
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-[var(--background)] border border-[var(--border)] rounded-md" data-file-index="${index}">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-[var(--background)] border border-[var(--border)] rounded-md" data-file-index="${index}">
         <div>
           <label class="block text-xs font-medium text-[var(--foreground)] mb-1">File Name</label>
           <input
@@ -221,6 +209,16 @@ export class FormComponents {
             name="files[${index}][type]"
             value="${file?.type || ''}"
             placeholder="e.g., .docx, .pdf, .zip"
+            class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] placeholder-[var(--muted-foreground)] focus:border-[var(--primary)]"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-[var(--foreground)] mb-1">Size</label>
+          <input
+            type="text"
+            name="files[${index}][size]"
+            value="${file?.size || ''}"
+            placeholder="e.g., 12 MB"
             class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] placeholder-[var(--muted-foreground)] focus:border-[var(--primary)]"
           />
         </div>

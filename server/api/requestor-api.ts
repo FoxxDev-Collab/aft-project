@@ -58,6 +58,24 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
     
     try {
       const requestData = await request.json() as any;
+
+      // Parse multi-destination payload and prepare transfer_data JSON
+      let destinations: Array<any> = [];
+      try {
+        if (requestData.destinations_json) {
+          const parsed = JSON.parse(requestData.destinations_json);
+          if (Array.isArray(parsed)) destinations = parsed;
+        }
+      } catch {}
+      const transferDataJson = JSON.stringify({ destinations });
+
+      // If primary destination fields are empty, seed them from the first destination entry
+      if (destinations.length > 0) {
+        const first = destinations[0] || {};
+        if (!requestData.dest_system) requestData.dest_system = first.is || '';
+        if (!requestData.dest_location) requestData.dest_location = first.location || '';
+        if (!requestData.destination_poc) requestData.destination_poc = first.contact || '';
+      }
       
       // Ensure we have a request number and that it is unique
       if (!requestData.media_control_number) {
@@ -113,6 +131,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
             additional_file_list_attached = ?,
             compression_required = ?,
             encryption = ?,
+            transfer_data = ?,
             updated_at = unixepoch()
           WHERE id = ? AND requestor_id = ?
         `).run(
@@ -135,6 +154,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
           requestData.additional_file_list_attached ? 1 : 0,
           requestData.media_encrypted ? 1 : 0,
           requestData.media_encrypted ? 'Yes' : 'No',
+          transferDataJson,
           requestId,
           authResult.session.userId
         );
@@ -150,8 +170,9 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
             dta_id,
             dest_system, dest_location, dest_contact, files_list, 
             additional_file_list_attached, compression_required, encryption,
+            transfer_data,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
           RETURNING id
         `).get(
           requestData.media_control_number,
@@ -174,7 +195,8 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
           requestData.files || '[]',
           requestData.additional_file_list_attached ? 1 : 0,
           requestData.media_encrypted ? 1 : 0,
-          requestData.media_encrypted ? 'Yes' : 'No'
+          requestData.media_encrypted ? 'Yes' : 'No',
+          transferDataJson
         ) as any;
         
         requestId = result.id;
@@ -203,7 +225,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
     }
   }
 
-  // Requestor submit request API
+  // Requestor submit (or resubmit) request API
   if (path === '/api/requestor/submit-request' && method === 'POST') {
     const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress, UserRole.REQUESTOR);
     if (authResult.response) return authResult.response;
@@ -221,7 +243,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         });
       }
       
-      // Verify the request belongs to this user and is in draft status
+      // Verify the request belongs to this user and is in a submittable status
       const existingRequest = db.query(`
         SELECT id, status, request_number FROM aft_requests 
         WHERE id = ? AND requestor_id = ?
@@ -237,20 +259,21 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         });
       }
       
-      if (existingRequest.status !== 'draft') {
+      if (!['draft','rejected'].includes(existingRequest.status)) {
         return new Response(JSON.stringify({ 
           success: false, 
-          message: 'Only draft requests can be submitted' 
+          message: 'Only draft or rejected requests can be submitted' 
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         });
       }
       
-      // Update request status to submitted
+      // Update request status to submitted (clear rejection reason if resubmitting)
       db.query(`
         UPDATE aft_requests SET
           status = 'submitted',
+          rejection_reason = NULL,
           updated_at = unixepoch()
         WHERE id = ?
       `).run(requestId);
@@ -280,12 +303,29 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         signature.userAgent || 'Unknown'
       );
       
+      // History: mark resubmission if coming from rejected
+      try {
+        if (existingRequest.status === 'rejected') {
+          db.query(`
+            INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
+            VALUES (?, 'RESUBMITTED', ?, 'Request resubmitted by requestor', unixepoch())
+          `).run(requestId, authResult.session.email);
+        } else {
+          db.query(`
+            INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
+            VALUES (?, 'SUBMITTED', ?, 'Request submitted by requestor', unixepoch())
+          `).run(requestId, authResult.session.email);
+        }
+      } catch {}
+
       await auditLog(authResult.session.userId, 'AFT_REQUEST_SUBMITTED', 
-        `AFT request submitted for approval: ${existingRequest.request_number}`, ipAddress);
+        `AFT request ${existingRequest.status === 'rejected' ? 'resubmitted' : 'submitted'} for approval: ${existingRequest.request_number}`, ipAddress);
       
       return new Response(JSON.stringify({ 
         success: true, 
-        message: 'Request submitted successfully and is now pending ISSM/ISSO review',
+        message: existingRequest.status === 'rejected' 
+          ? 'Request resubmitted successfully and is now pending ISSM/ISSO review'
+          : 'Request submitted successfully and is now pending ISSM/ISSO review',
         status: 'submitted'
       }), {
         headers: { 'Content-Type': 'application/json' }

@@ -1,33 +1,33 @@
-// Approver Navigation Component for consistent navigation across approver pages
+// CPSO Navigation Component for consistent navigation across CPSO pages
 import { ComponentBuilder } from "../components/ui/server-components";
 import { ClipboardIcon, CheckCircleIcon, ClockIcon, ChartBarIcon } from "../components/icons";
 
-export interface ApproverUser {
+export interface CPSOUser {
   email: string;
   role: string;
 }
 
-export interface ApproverNavItem {
+export interface CPSONavItem {
   label: string;
   href: string;
   active?: boolean;
   icon?: string;
 }
 
-export class ApproverNavigation {
-  private static readonly NAV_ITEMS: ApproverNavItem[] = [
-    { label: 'Dashboard', href: '/approver', icon: ChartBarIcon({ size: 16 }) },
-    { label: 'Pending Approvals', href: '/approver/pending', icon: ClockIcon({ size: 16 }) },
-    { label: 'Approved', href: '/approver/approved', icon: CheckCircleIcon({ size: 16 }) },
-    { label: 'Reports', href: '/approver/reports', icon: ClipboardIcon({ size: 16 }) },
-    { label: 'All Requests', href: '/approver/all-requests', icon: ClipboardIcon({ size: 16 }) }
+export class CPSONavigation {
+  private static readonly NAV_ITEMS: CPSONavItem[] = [
+    { label: 'Dashboard', href: '/cpso', icon: ChartBarIcon({ size: 16 }) },
+    { label: 'Pending Approvals', href: '/cpso/pending', icon: ClockIcon({ size: 16 }) },
+    { label: 'Approved', href: '/cpso/approved', icon: CheckCircleIcon({ size: 16 }) },
+    { label: 'Reports', href: '/cpso/reports', icon: ClipboardIcon({ size: 16 }) },
+    { label: 'All Requests', href: '/cpso/all-requests', icon: ClipboardIcon({ size: 16 }) }
   ];
 
-  static getNavItems(currentPath: string): ApproverNavItem[] {
+  static getNavItems(currentPath: string): CPSONavItem[] {
     return this.NAV_ITEMS.map(item => ({
       ...item,
       active: currentPath === item.href || 
-               (item.href !== '/approver' && currentPath.startsWith(item.href))
+               (item.href !== '/cpso' && currentPath.startsWith(item.href))
     }));
   }
 
@@ -56,12 +56,12 @@ export class ApproverNavigation {
   static renderPageHeader(
     title: string, 
     subtitle: string, 
-    user: ApproverUser, 
+    user: CPSOUser, 
     currentPath: string,
     actions?: string
   ): string {
     return ComponentBuilder.pageHeader({
-      title: `AFT Approver - ${title}`,
+      title: `AFT CPSO - ${title}`,
       subtitle,
       classification: 'UNCLASSIFIED',
       user,
@@ -77,7 +77,7 @@ export class ApproverNavigation {
   static renderLayout(
     title: string,
     subtitle: string,
-    user: ApproverUser,
+    user: CPSOUser,
     currentPath: string,
     content: string,
     actions?: string

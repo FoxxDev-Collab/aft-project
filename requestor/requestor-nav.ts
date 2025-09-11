@@ -1,5 +1,6 @@
 // Requestor Navigation Component for consistent navigation across requestor pages
 import { ComponentBuilder } from "../components/ui/server-components";
+import { HomeIcon, ListIcon, ClipboardIcon, PlusIcon } from "../components/icons";
 
 export interface RequestorUser {
   email: string;
@@ -15,9 +16,10 @@ export interface RequestorNavItem {
 
 export class RequestorNavigation {
   private static readonly NAV_ITEMS: RequestorNavItem[] = [
-    { label: 'Dashboard', href: '/requestor', icon: '🏠' },
-    { label: 'My Requests', href: '/requestor/requests', icon: '📋' },
-    { label: 'New Request', href: '/requestor/new-request', icon: '➕' },
+    { label: 'Dashboard', href: '/requestor', icon: HomeIcon({ size: 16 }) },
+    { label: 'All Requests', href: '/requestor/all-requests', icon: ListIcon({ size: 16 }) },
+    { label: 'My Requests', href: '/requestor/requests', icon: ClipboardIcon({ size: 16 }) },
+    { label: 'New Request', href: '/requestor/new-request', icon: PlusIcon({ size: 16 }) },
   ];
 
   static getNavItems(currentPath: string): RequestorNavItem[] {
