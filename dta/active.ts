@@ -234,12 +234,19 @@ export class DTAActiveTransfers {
       }
       
       function performTransfer(requestId) {
-        if (confirm('Perform the file transfer? This will mark the transfer as complete and ready for DTA signature.')) {
+        const filesTransferred = prompt('Enter the number of files transferred:');
+        if (!filesTransferred || isNaN(parseInt(filesTransferred))) {
+          alert('Please enter a valid number of files transferred');
+          return;
+        }
+        
+        if (confirm(\`Perform the file transfer with \${filesTransferred} files? This will mark the transfer as complete and ready for DTA signature.\`)) {
           fetch(\`/api/dta/requests/\${requestId}/complete\`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              notes: 'Transfer completed by DTA per Section 4 procedures'
+              filesTransferred: parseInt(filesTransferred),
+              notes: \`Transfer completed by DTA per Section 4 procedures. \${filesTransferred} files transferred.\`
             })
           })
           .then(response => response.json())
@@ -258,28 +265,64 @@ export class DTAActiveTransfers {
         }
       }
       
-      function signTransfer(requestId) {
-        if (confirm('Sign this transfer as DTA? This will move the request to SME signature for Two-Person Integrity verification.')) {
-          fetch(\`/api/dta/requests/\${requestId}/sign\`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              notes: 'DTA signature completed per Section 4 requirements'
-            })
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              alert('DTA signature recorded! Request moved to SME for Two-Person Integrity verification.');
-              window.location.reload();
-            } else {
-              alert('Failed to record DTA signature: ' + data.error);
-            }
-          })
-          .catch(error => {
-            console.error('Error recording DTA signature:', error);
-            alert('Failed to record DTA signature. Please try again.');
+      async function signTransfer(requestId) {
+        // First fetch available SME users
+        try {
+          const smeResponse = await fetch('/api/dta/sme-users');
+          const smeData = await smeResponse.json();
+          
+          if (!smeData.success || !smeData.users || smeData.users.length === 0) {
+            alert('No SME users available. Please contact an administrator.');
+            return;
+          }
+          
+          // Create a selection dialog
+          let smeOptions = 'Available SME Users:\\n\\n';
+          smeData.users.forEach((user, index) => {
+            smeOptions += \`\${index + 1}. \${user.name} (\${user.email})\\n\`;
           });
+          smeOptions += '\\nEnter the number of the SME to assign:';
+          
+          const selection = prompt(smeOptions);
+          if (!selection || isNaN(parseInt(selection))) {
+            alert('Please select a valid SME');
+            return;
+          }
+          
+          const selectedIndex = parseInt(selection) - 1;
+          if (selectedIndex < 0 || selectedIndex >= smeData.users.length) {
+            alert('Invalid selection');
+            return;
+          }
+          
+          const selectedSME = smeData.users[selectedIndex];
+          
+          if (confirm(\`Sign this transfer and assign to SME \${selectedSME.name}? This will move the request to SME signature for Two-Person Integrity verification.\`)) {
+            fetch(\`/api/dta/requests/\${requestId}/sign\`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                smeUserId: selectedSME.id,
+                notes: \`DTA signature completed per Section 4 requirements. Assigned to SME: \${selectedSME.name}\`
+              })
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                alert('DTA signature recorded! Request moved to SME for Two-Person Integrity verification.');
+                window.location.reload();
+              } else {
+                alert('Failed to record DTA signature: ' + data.error);
+              }
+            })
+            .catch(error => {
+              console.error('Error recording DTA signature:', error);
+              alert('Failed to record DTA signature. Please try again.');
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching SME users:', error);
+          alert('Failed to fetch SME users. Please try again.');
         }
       }
     `;

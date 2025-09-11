@@ -72,6 +72,9 @@ async function handleDTAGet(segments: string[], db: any, userId: number, userEma
     case 'statistics':
       return getDTAStatistics(db);
     
+    case 'sme-users':
+      return getSMEUsers(db);
+    
     default:
       return new Response(JSON.stringify({ error: 'Resource not found' }), {
         status: 404,
@@ -285,6 +288,29 @@ function getDTAStatistics(db: any): Response {
   };
 
   return new Response(JSON.stringify({ success: true, stats }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+function getSMEUsers(db: any): Response {
+  // Get all users with SME role
+  const smeUsers = db.query(`
+    SELECT 
+      id, 
+      email, 
+      first_name || ' ' || last_name as name,
+      organization
+    FROM users 
+    WHERE primary_role = 'sme' OR 'sme' IN (
+      SELECT role FROM user_roles WHERE user_id = users.id
+    )
+    ORDER BY name
+  `).all() as any[];
+
+  return new Response(JSON.stringify({ 
+    success: true, 
+    users: smeUsers 
+  }), {
     headers: { 'Content-Type': 'application/json' }
   });
 }
@@ -777,18 +803,53 @@ async function signDTARequest(db: any, requestId: number, body: any, userId: num
     });
   }
 
-  // Update request with DTA signature and move to SME signature
+  // Extract SME assignment from body
+  const { smeUserId, notes } = body;
+  
+  if (!smeUserId) {
+    return new Response(JSON.stringify({ error: 'SME user must be assigned when signing' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // Verify SME user exists and has SME role
+  const smeUser = db.query(`
+    SELECT id, email, first_name || ' ' || last_name as name 
+    FROM users 
+    WHERE id = ? AND (primary_role = 'sme' OR id IN (
+      SELECT user_id FROM user_roles WHERE role = 'sme'
+    ))
+  `).get(smeUserId);
+  
+  if (!smeUser) {
+    return new Response(JSON.stringify({ error: 'Invalid SME user selected' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // Update request with DTA signature, SME assignment, and move to SME signature
   db.query(`
     UPDATE aft_requests 
     SET dta_signature_date = unixepoch(),
+        sme_id = ?,
+        assigned_sme_id = ?,
         status = 'pending_sme_signature',
         updated_at = unixepoch()
     WHERE id = ?
-  `).run(requestId);
+  `).run(smeUserId, smeUserId, requestId);
 
-  // Log the signature
-  RequestTrackingService.addAuditEntry(requestId, 'dta_signed', 'DTA Signed', 
-    `Request signed by DTA ${userEmail}. Forwarded to SME for Two-Person Integrity signature.`, userEmail);
+  // Log the signature and SME assignment
+  RequestTrackingService.addAuditEntry(
+    parseInt(requestId.toString()),
+    userId,
+    'dta_signed',
+    'active_transfer',
+    'pending_sme_signature',
+    JSON.stringify({ smeUserId, smeName: smeUser.name }),
+    `Request signed by DTA ${userEmail}. Assigned to SME ${smeUser.name} for Two-Person Integrity signature. ${notes || ''}`
+  );
 
   // Security audit log
   await auditLog(
@@ -801,8 +862,13 @@ async function signDTARequest(db: any, requestId: number, body: any, userId: num
 
   return new Response(JSON.stringify({ 
     success: true, 
-    message: 'DTA signature recorded successfully. Request forwarded to SME for Two-Person Integrity.',
-    newStatus: 'pending_sme_signature'
+    message: `DTA signature recorded successfully. Request assigned to ${smeUser.name} for Two-Person Integrity verification.`,
+    newStatus: 'pending_sme_signature',
+    assignedSME: {
+      id: smeUser.id,
+      name: smeUser.name,
+      email: smeUser.email
+    }
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
@@ -853,35 +919,46 @@ async function completeTransfer(db: any, requestId: number, body: any, userId: n
     });
   }
 
-  const { filesTransferred, smeUserId, tpiMaintained } = body;
+  const { filesTransferred, smeUserId, tpiMaintained, notes } = body;
 
   // Validate required fields
-  if (!filesTransferred || !smeUserId) {
+  if (!filesTransferred) {
     return new Response(JSON.stringify({ 
-      error: 'Files transferred count and SME user ID are required' 
+      error: 'Files transferred count is required' 
     }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
     });
   }
 
-  // Update request with transfer completion data and move to pending SME signature
+  // Update request with transfer completion data - keep in active_transfer until DTA signs
   db.query(`
     UPDATE aft_requests 
     SET transfer_completed_date = unixepoch(),
         files_transferred_count = ?,
-        dta_signature_date = unixepoch(),
-        sme_id = ?,
-        tpi_maintained = ?,
-        actual_end_date = unixepoch(),
-        status = 'pending_sme_signature',
         updated_at = unixepoch()
     WHERE id = ?
-  `).run(filesTransferred, smeUserId, tpiMaintained ? 1 : 0, requestId);
+  `).run(filesTransferred, requestId);
+  
+  // Update SME assignment if provided
+  if (smeUserId) {
+    db.query(`
+      UPDATE aft_requests 
+      SET sme_id = ?
+      WHERE id = ?
+    `).run(smeUserId, requestId);
+  }
 
   // Log the transfer completion
-  RequestTrackingService.addAuditEntry(requestId, 'transfer_completed', 'Transfer Completed by DTA', 
-    `Transfer completed by ${userEmail}. ${filesTransferred} files transferred. TPI ${tpiMaintained ? 'maintained' : 'not maintained'}`, userEmail);
+  RequestTrackingService.addAuditEntry(
+    parseInt(requestId.toString()),
+    userId,
+    'transfer_completed',
+    'active_transfer',
+    'active_transfer',
+    JSON.stringify({ filesTransferred, notes }),
+    `Transfer completed by ${userEmail}. ${filesTransferred} files transferred.`
+  );
 
   // Add timeline entry for pending SME signature
   RequestTrackingService.addAuditEntry(requestId, 'pending_sme_signature', 'Pending SME Signature', 

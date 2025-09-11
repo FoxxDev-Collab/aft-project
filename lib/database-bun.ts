@@ -83,12 +83,6 @@ export function getDb() {
       console.error("Failed to run migrations:", err);
     });
 
-    // Run seeder for sample requests
-    import("./database-seeder").then(s => {
-      // Seeder runs automatically on import
-    }).catch(err => {
-      console.error("Failed to run seeder:", err);
-    });
   }
   return db;
 }
@@ -538,6 +532,13 @@ async function initializeDatabase() {
 
       console.log(`✓ Seeded ${testMediaDrives.length} drives in media drives inventory`);
     }
+
+    // Run seeder for sample requests after user initialization is complete
+    import("./database-seeder").then(seeder => {
+      // Seeder runs automatically on import
+    }).catch(err => {
+      console.error("Failed to run seeder:", err);
+    });
 
   } catch (error) {
     console.error('Database initialization failed:', error);
