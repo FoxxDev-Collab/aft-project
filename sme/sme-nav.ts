@@ -1,6 +1,6 @@
 // SME Navigation Component for consistent navigation across SME pages
 import { ComponentBuilder } from "../components/ui/server-components";
-import { EditIcon, ClipboardIcon, ListIcon, FileTextIcon } from "../components/icons";
+import { EditIcon, ClipboardIcon, ListIcon } from "../components/icons";
 
 export interface SMEUser {
   email: string;
@@ -17,9 +17,8 @@ export interface SMENavItem {
 export class SMENavigation {
   private static readonly NAV_ITEMS: SMENavItem[] = [
     { label: 'Dashboard', href: '/sme', icon: EditIcon({ size: 16 }) },
-    { label: 'Requests', href: '/sme/requests', icon: ListIcon({ size: 16 }) },
-    { label: 'All Requests', href: '/sme/all-requests', icon: FileTextIcon({ size: 16 }) },
-    { label: 'Signature History', href: '/sme/history', icon: ClipboardIcon({ size: 16 }) }
+    { label: 'Signature Queue', href: '/sme/signatures', icon: ClipboardIcon({ size: 16 }) },
+    { label: 'Requests', href: '/sme/requests', icon: ListIcon({ size: 16 }) }
   ];
 
   static getNavItems(currentPath: string): SMENavItem[] {

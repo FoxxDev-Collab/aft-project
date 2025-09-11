@@ -137,6 +137,109 @@ export class SMEDashboard {
     });
   }
 
+  static async renderSignatureQueue(user: SMEUser, userId: number): Promise<string> {
+    const db = getDb();
+
+    const pendingRequests = db.query(`
+      SELECT r.*, u.email as requestor_email
+      FROM aft_requests r
+      LEFT JOIN users u ON r.requestor_id = u.id
+      WHERE r.status = 'pending_sme_signature'
+      ORDER BY r.updated_at ASC
+    `).all() as any[];
+
+    const content = `
+      <div class="space-y-8">
+        ${ComponentBuilder.sectionHeader({
+          title: 'Signature Queue',
+          description: 'Requests awaiting your Two-Person Integrity signature.'
+        })}
+        
+        ${this.buildSignatureQueueTable(pendingRequests)}
+      </div>
+    `;
+
+    return SMENavigation.renderLayout(
+      'Signature Queue',
+      'Pending Two-Person Integrity Signatures',
+      user,
+      '/sme/signatures',
+      content
+    );
+  }
+
+  private static buildSignatureQueueTable(requests: any[]): string {
+    if (requests.length === 0) {
+      return `<div class="bg-[var(--card)] p-8 rounded-lg border border-[var(--border)] text-center">
+                <div class="text-4xl mb-4">✅</div>
+                <h3 class="text-lg font-medium text-[var(--foreground)] mb-2">No Pending Signatures</h3>
+                <p class="text-[var(--muted-foreground)] mb-4">All requests have been processed.</p>
+              </div>`;
+    }
+
+    const tableData = requests.map(request => ({
+      id: request.id,
+      request_number: request.request_number,
+      requestor_email: request.requestor_email,
+      updated_at: request.updated_at,
+      dta_signature: request.dta_signature
+    }));
+
+    const columns = [
+      {
+        key: 'request_number',
+        label: 'Request',
+        render: (value: any, row: any) => `<div>
+                                            <div class="font-medium text-[var(--foreground)] text-sm">${row.request_number}</div>
+                                            <div class="text-xs text-[var(--muted-foreground)]">ID: ${row.id}</div>
+                                          </div>`
+      },
+      {
+        key: 'requestor_email',
+        label: 'Requestor',
+        render: (value: any, row: any) => `<div class="text-sm text-[var(--foreground)]">${row.requestor_email || 'Unknown'}</div>`
+      },
+      {
+        key: 'dta_signature',
+        label: 'DTA Status',
+        render: (value: any, row: any) => {
+          return row.dta_signature 
+            ? ComponentBuilder.statusBadge('DTA SIGNED', 'success')
+            : ComponentBuilder.statusBadge('PENDING DTA', 'warning');
+        }
+      },
+      {
+        key: 'updated_at',
+        label: 'Last Updated',
+        render: (value: any, row: any) => `<div class="text-xs text-[var(--foreground)]">${new Date(row.updated_at * 1000).toLocaleDateString()}</div>`
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        render: (value: any, row: any) => {
+          return ComponentBuilder.button({ 
+            children: 'Review & Sign', 
+            onClick: `window.location.href='/sme/sign/${row.id}'`, 
+            variant: 'primary', 
+            size: 'sm' 
+          });
+        }
+      }
+    ];
+
+    const table = ComponentBuilder.table({
+      columns,
+      rows: tableData,
+      emptyMessage: 'No pending signatures',
+      compact: true
+    });
+
+    return ComponentBuilder.tableContainer({
+      table,
+      className: 'bg-[var(--card)] rounded-lg border border-[var(--border)]'
+    });
+  }
+
   static getScript(): string {
     return ``; // No scripts needed for this dashboard yet
   }

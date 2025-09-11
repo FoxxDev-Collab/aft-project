@@ -1,4 +1,4 @@
-// SME All Requests Page (shows all AFT requests with SME-specific actions)
+// SME All Requests Page (shows all users' requests) - matches Admin Requests format
 import { ComponentBuilder } from "../components/ui/server-components";
 import { SMENavigation, type SMEUser } from "./sme-nav";
 import { getDb } from "../lib/database-bun";
@@ -10,11 +10,9 @@ export class SMEAllRequests {
   static async render(user: SMEUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
     const db = getDb();
 
-    // SME-specific stats
+    // Stats (optional but matches format)
     const totalRequests = db.query("SELECT COUNT(*) as count FROM aft_requests").get() as any;
-    const pendingSME = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status IN ('pending_sme', 'pending_sme_signature')").get() as any;
-    const signedToday = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE sme_signature_date IS NOT NULL AND sme_signature_date > ?").get(Date.now() / 1000 - 86400) as any;
-    const awaitingMediaCustodian = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status = 'pending_media_custodian'").get() as any;
+    const pendingRequests = db.query("SELECT COUNT(*) as count FROM aft_requests WHERE status NOT IN ('completed', 'rejected', 'cancelled')").get() as any;
 
     // Get requests with timeline data (same helper used by admin page)
     const requestsWithTimeline = RequestTrackingService.getRequestsWithTimeline({ limit: 50 });
@@ -117,11 +115,21 @@ export class SMEAllRequests {
       {
         key: 'actions',
         label: 'Actions',
-        render: (value: any, row: any) => ComponentBuilder.tableCellActions([
-          { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
-          { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' },
-          { label: 'Sign', onClick: `signRequest(${row.id})`, variant: row.status === 'pending_sme' || row.status === 'pending_sme_signature' ? 'primary' : 'secondary' }
-        ])
+        render: (value: any, row: any) => {
+          if (row.status === 'pending_sme_signature') {
+            return ComponentBuilder.button({ 
+              children: 'Review & Sign', 
+              onClick: `window.location.href='/sme/sign/${row.id}'`, 
+              variant: 'primary', 
+              size: 'sm' 
+            });
+          } else {
+            return ComponentBuilder.tableCellActions([
+              { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
+              { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' }
+            ]);
+          }
+        }
       }
     ];
 
@@ -179,8 +187,8 @@ export class SMEAllRequests {
     const timelineContent = viewMode === 'timeline' ? this.renderTimelineView(tableData) : '';
 
     const tableContainer = ComponentBuilder.tableContainer({
-      title: 'All AFT Requests',
-      description: 'View and sign all Assured File Transfer requests requiring SME approval',
+      title: 'AFT Requests',
+      description: 'Manage and track all Assured File Transfer requests with live status timeline',
       search,
       filters,
       actions: `
@@ -202,16 +210,16 @@ export class SMEAllRequests {
             <div class="text-sm text-[var(--muted-foreground)]">Total Requests</div>
           </div>
           <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--warning)]">${pendingSME?.count || 0}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Pending SME Signature</div>
+            <div class="text-2xl font-bold text-[var(--warning)]">${pendingRequests?.count || 0}</div>
+            <div class="text-sm text-[var(--muted-foreground)]">Pending Review</div>
           </div>
           <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--success)]">${signedToday?.count || 0}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Signed Today</div>
+            <div class="text-2xl font-bold text-[var(--success)]">${Math.round(((totalRequests?.count || 1) - (pendingRequests?.count || 0)) / (totalRequests?.count || 1) * 100)}%</div>
+            <div class="text-sm text-[var(--muted-foreground)]">Completion Rate</div>
           </div>
           <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
-            <div class="text-2xl font-bold text-[var(--info)]">${awaitingMediaCustodian?.count || 0}</div>
-            <div class="text-sm text-[var(--muted-foreground)]">Awaiting Media Custodian</div>
+            <div class="text-2xl font-bold text-[var(--info)]">${tableData.filter((r: any) => r.created_at > (Date.now() - 86400000) / 1000).length}</div>
+            <div class="text-sm text-[var(--muted-foreground)]">Today's Requests</div>
           </div>
         </div>
 
@@ -220,10 +228,10 @@ export class SMEAllRequests {
     `;
 
     return SMENavigation.renderLayout(
-      'All Requests',
+      'Requests',
       'View all AFT requests across users',
       user,
-      '/sme/all-requests',
+      '/sme/requests',
       content
     );
   }
@@ -252,7 +260,7 @@ export class SMEAllRequests {
                 </div>
                 <div class="flex gap-1">
                   <button onclick="viewRequest(${request.id})" class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">View</button>
-                  <button onclick="signRequest(${request.id})" class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Sign</button>
+                  <button onclick="editRequest(${request.id})" class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Edit</button>
                 </div>
               </div>
 
@@ -277,17 +285,11 @@ export class SMEAllRequests {
       let currentView = 'table';
       
       function createRequest() {
-        // SME cannot create new requests
-        alert('SMEs cannot create new AFT requests. Please contact a requestor.');
+        window.location.href = '/requestor/new-request';
       }
       
       function viewRequest(requestId) {
-        window.location.href = '/sme/requests/' + requestId;
-      }
-      
-      function signRequest(requestId) {
-        // SME can sign/approve transfers
-        window.location.href = '/sme/requests/' + requestId + '?action=sign';
+        alert('Request details view not available from All Requests for Requestors. ID: ' + requestId);
       }
       
       function viewTimeline(requestId) {

@@ -1,45 +1,45 @@
-// Approver Reports Page - Analytics and reporting for approval activities
+// CPSO Reports Page - Analytics and reporting for CPSO activities
 import { ComponentBuilder, Templates } from "../components/ui/server-components";
-import { ApproverNavigation, type ApproverUser } from "./approver-nav";
+import { CPSONavigation, type CPSOUser } from "./cpso-nav";
 import { getDb } from "../lib/database-bun";
 import { ChartBarIcon, TrendingUpIcon, PieChartIcon, DownloadIcon, CalendarIcon } from "../components/icons";
 
-export class ApproverReportsPage {
-  static async render(user: ApproverUser): Promise<string> {
+export class CPSOReportsPage {
+  static async render(user: CPSOUser): Promise<string> {
     const db = getDb();
     
-    // Get approval statistics
+    // Get CPSO review statistics
     const stats = {
       total: db.query(`
         SELECT COUNT(*) as count FROM aft_requests 
-        WHERE approver_email = ?
+        WHERE cpso_email = ?
       `).get(user.email) as any,
       
       approved: db.query(`
         SELECT COUNT(*) as count FROM aft_requests 
-        WHERE status = 'approved' AND approver_email = ?
+        WHERE cpso_status = 'approved' AND cpso_email = ?
       `).get(user.email) as any,
       
       rejected: db.query(`
         SELECT COUNT(*) as count FROM aft_requests 
-        WHERE status = 'rejected' AND approver_email = ?
+        WHERE cpso_status = 'rejected' AND cpso_email = ?
       `).get(user.email) as any,
       
       avgProcessingTime: db.query(`
-        SELECT AVG(julianday(updated_at) - julianday(created_at)) * 24 as hours
+        SELECT AVG(julianday(cpso_reviewed_at) - julianday(created_at)) * 24 as hours
         FROM aft_requests 
-        WHERE status IN ('approved', 'rejected') AND approver_email = ?
+        WHERE cpso_status IN ('approved', 'rejected') AND cpso_email = ?
       `).get(user.email) as any
     };
 
     // Get monthly breakdown
     const monthlyData = db.query(`
       SELECT 
-        strftime('%Y-%m', updated_at) as month,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
-        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected
+        strftime('%Y-%m', cpso_reviewed_at) as month,
+        COUNT(CASE WHEN cpso_status = 'approved' THEN 1 END) as approved,
+        COUNT(CASE WHEN cpso_status = 'rejected' THEN 1 END) as rejected
       FROM aft_requests
-      WHERE approver_email = ? AND status IN ('approved', 'rejected')
+      WHERE cpso_email = ? AND cpso_status IN ('approved', 'rejected')
       GROUP BY month
       ORDER BY month DESC
       LIMIT 6
@@ -52,7 +52,7 @@ export class ApproverReportsPage {
         dest_system,
         COUNT(*) as count
       FROM aft_requests
-      WHERE approver_email = ? AND status IN ('approved', 'rejected')
+      WHERE cpso_email = ? AND cpso_status IN ('approved', 'rejected')
       GROUP BY source_system, dest_system
       ORDER BY count DESC
       LIMIT 10
@@ -67,7 +67,7 @@ export class ApproverReportsPage {
         <div>
           <h3 class="text-lg font-semibold text-[var(--foreground)] mb-4 flex items-center gap-2">
             ${TrendingUpIcon({ size: 20 })}
-            Key Performance Metrics
+            CPSO Review Metrics
           </h3>
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             ${this.renderMetricCard('Total Processed', stats.total?.count || 0, 'primary')}
@@ -82,7 +82,7 @@ export class ApproverReportsPage {
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
               ${PieChartIcon({ size: 20 })}
-              Approval Rate
+              CPSO Approval Rate
             </h3>
             <span class="text-2xl font-bold text-[var(--success)]">${approvalRate}%</span>
           </div>
@@ -102,7 +102,7 @@ export class ApproverReportsPage {
         <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
           <h3 class="text-lg font-semibold text-[var(--foreground)] mb-4 flex items-center gap-2">
             ${ChartBarIcon({ size: 20 })}
-            Monthly Approval Trends
+            Monthly CPSO Review Trends
           </h3>
           ${monthlyData.length > 0 ? `
             <div class="overflow-x-auto">
@@ -165,11 +165,11 @@ export class ApproverReportsPage {
       </div>
     `;
 
-    return ApproverNavigation.renderLayout(
+    return CPSONavigation.renderLayout(
       'Reports & Analytics',
-      'Approval metrics and performance insights',
+      'CPSO review metrics and performance insights',
       user,
-      '/approver/reports',
+      '/cpso/reports',
       content
     );
   }
@@ -222,7 +222,7 @@ export class ApproverReportsPage {
         button.disabled = true;
         button.innerHTML = 'Generating...';
         
-        fetch('/api/approver/reports/generate', {
+        fetch('/api/cpso/reports/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type })

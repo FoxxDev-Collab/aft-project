@@ -166,8 +166,8 @@ export async function handleCPSOAPI(request: Request, path: string, ipAddress: s
             u.email as requestor_email
           FROM aft_requests r
           LEFT JOIN users u ON r.requestor_id = u.id
-          WHERE r.approver_email = ? ${dateFilter}
-          ORDER BY r.updated_at DESC
+          WHERE r.cpso_email = ? ${dateFilter}
+          ORDER BY r.cpso_reviewed_at DESC
         `).all(session.email) as any[];
         
         // Generate a printable HTML report

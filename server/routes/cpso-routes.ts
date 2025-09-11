@@ -7,6 +7,7 @@ import { PendingCPSOReviewsPage } from "../../cpso/pending";
 import { CPSOApprovedRequestsPage } from "../../cpso/approved";
 import { RequestReviewPage } from "../../cpso/request-review";
 import { CPSOAllRequests } from "../../cpso/all-requests";
+import { CPSOReportsPage } from "../../cpso/reports";
 import { createHtmlPage } from "../utils";
 
 export async function handleCPSORoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
@@ -59,8 +60,9 @@ export async function handleCPSORoutes(request: Request, path: string, ipAddress
       scriptContent = CPSOAllRequests.getScript();
       title = 'AFT - All Requests';
     } else if (path === '/cpso/reports') {
-      // Reports functionality not yet implemented for CPSO
-      return new Response("Reports functionality coming soon", { status: 501 });
+      htmlContent = await CPSOReportsPage.render(user);
+      scriptContent = CPSOReportsPage.getScript();
+      title = 'AFT - CPSO Reports';
     } else if (path.startsWith('/cpso/request/') || path.startsWith('/cpso/review/')) {
       const requestId = path.split('/')[3];
       if (requestId) {

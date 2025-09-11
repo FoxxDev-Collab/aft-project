@@ -1,5 +1,5 @@
 // DTA Active Transfers - Simplified Section 4 Workflow
-import { ComponentBuilder } from "../components/ui/server-components";
+import { ComponentBuilder } from "../lib/component-builder";
 import { DTANavigation, type DTAUser } from "./dta-nav";
 import { getDb } from "../lib/database-bun";
 
@@ -22,13 +22,15 @@ export class DTAActiveTransfers {
     `).all() as any[];
 
     const content = `
-      <div class="space-y-6">
-        ${ComponentBuilder.sectionHeader({
-          title: 'Active Transfers - Section 4 Procedures',
-          description: 'Record AV scan results, perform transfers, and complete DTA signature workflow'
-        })}
-        
-        ${this.buildActiveTransfersTable(activeTransfers)}
+      <div class="dashboard-main">
+        <div class="space-y-6">
+          <div class="status-card">
+            <h1 class="text-2xl font-bold mb-2">Active Transfers - Section 4 Procedures</h1>
+            <p class="text-muted-foreground">Record AV scan results, perform transfers, and complete DTA signature workflow</p>
+          </div>
+          
+          ${this.buildActiveTransfersTable(activeTransfers)}
+        </div>
       </div>
     `;
 
@@ -44,10 +46,10 @@ export class DTAActiveTransfers {
   private static buildActiveTransfersTable(transfers: any[]): string {
     if (transfers.length === 0) {
       return `
-        <div class="bg-[var(--card)] p-8 rounded-lg border border-[var(--border)] text-center">
+        <div class="status-card text-center">
           <div class="text-4xl mb-4">🔄</div>
-          <h3 class="text-lg font-medium text-[var(--foreground)] mb-2">No Active Transfers</h3>
-          <p class="text-[var(--muted-foreground)] mb-4">No transfers are currently in active status.</p>
+          <h3 class="text-lg font-medium mb-2">No Active Transfers</h3>
+          <p class="text-muted-foreground mb-4">No transfers are currently in active status.</p>
         </div>
       `;
     }
@@ -75,8 +77,8 @@ export class DTAActiveTransfers {
         label: 'Request',
         render: (value: any, row: any) => `
           <div>
-            <div class="font-medium text-[var(--foreground)]">${row.request_number}</div>
-            <div class="text-xs text-[var(--muted-foreground)]">${row.requestor_name}</div>
+            <div class="font-medium">${row.request_number}</div>
+            <div class="text-xs text-muted-foreground">${row.requestor_name}</div>
           </div>
         `
       },
@@ -84,8 +86,8 @@ export class DTAActiveTransfers {
         key: 'systems',
         label: 'Transfer Route',
         render: (value: any, row: any) => `
-          <div class="text-sm text-[var(--foreground)]">${row.source_system || 'Source'} → ${row.source_location || 'Destination'}</div>
-          <div class="text-xs text-[var(--muted-foreground)]">${row.classification}</div>
+          <div class="text-sm">${row.source_system || 'Source'} → ${row.source_location || 'Destination'}</div>
+          <div class="text-xs text-muted-foreground">${row.classification}</div>
         `
       },
       {
@@ -96,13 +98,13 @@ export class DTAActiveTransfers {
             <div class="space-y-2">
               <div class="grid grid-cols-2 gap-2 text-xs">
                 <div class="flex items-center gap-1">
-                  <span class="${row.origination_scan_status === 'clean' ? 'text-[var(--success)]' : row.origination_scan_status === 'infected' ? 'text-[var(--destructive)]' : 'text-[var(--warning)]'}">
+                  <span class="${row.origination_scan_status === 'clean' ? 'status-value operational' : row.origination_scan_status === 'infected' ? 'status-value attention' : 'status-value'}">
                     ${row.origination_scan_status === 'clean' ? '✓' : row.origination_scan_status === 'infected' ? '✗' : '○'}
                   </span>
                   <span>Origin${row.origination_files_scanned ? ` (${row.origination_files_scanned})` : ''}</span>
                 </div>
                 <div class="flex items-center gap-1">
-                  <span class="${row.destination_scan_status === 'clean' ? 'text-[var(--success)]' : row.destination_scan_status === 'infected' ? 'text-[var(--destructive)]' : 'text-[var(--warning)]'}">
+                  <span class="${row.destination_scan_status === 'clean' ? 'status-value operational' : row.destination_scan_status === 'infected' ? 'status-value attention' : 'status-value'}">
                     ${row.destination_scan_status === 'clean' ? '✓' : row.destination_scan_status === 'infected' ? '✗' : '○'}
                   </span>
                   <span>Dest${row.destination_files_scanned ? ` (${row.destination_files_scanned})` : ''}</span>
@@ -111,10 +113,10 @@ export class DTAActiveTransfers {
               <div class="flex gap-1">
                 <input type="number" 
                        placeholder="Files" 
-                       class="w-16 text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-[var(--background)]"
+                       class="w-16 text-xs form-input-enhanced"
                        data-files-count="${row.id}"
                        min="0">
-                <select class="flex-1 text-xs border border-[var(--border)] rounded p-1 bg-[var(--background)]" 
+                <select class="flex-1 text-xs form-input-enhanced" 
                         onchange="updateScanStatus(${row.id}, this.value)" 
                         data-request-id="${row.id}">
                   <option value="">Select AV Scan Result...</option>
@@ -137,42 +139,55 @@ export class DTAActiveTransfers {
           const dtaSigned = row.dta_signature;
           
           if (dtaSigned) {
-            return `<div class="text-xs text-[var(--success)]">✓ Signed - Awaiting SME</div>`;
-          } else if (transferComplete) {
-            return `
-              <button class="w-full text-xs bg-[var(--primary)] text-[var(--primary-foreground)] px-2 py-1 rounded hover:bg-[var(--primary)]/80" 
-                      onclick="signTransfer(${row.id})">
-                Sign DTA (Section 4)
-              </button>
-            `;
-          } else if (canTransfer) {
-            return `
-              <button class="w-full text-xs bg-[var(--success)] text-white px-2 py-1 rounded hover:bg-[var(--success)]/80" 
-                      onclick="performTransfer(${row.id})">
-                Perform Transfer
-              </button>
-            `;
+            return `<div class="text-xs status-value operational">✓ Signed - Awaiting SME</div>`;
           } else {
-            return `<div class="text-xs text-[var(--muted-foreground)]">Awaiting AV Scans</div>`;
+            return `
+              <button class="action-btn primary w-full text-xs" 
+                      onclick="window.location.href='/dta/transfer/${row.id}'">
+                Manage Transfer
+              </button>
+            `;
           }
         }
       }
     ];
 
     // Create simplified table
-    const table = ComponentBuilder.table({
-      columns,
-      rows: tableData,
-      emptyMessage: 'No active transfers found',
-      compact: false
-    });
+    const table = this.buildSimpleTable(columns, tableData);
 
-    return ComponentBuilder.tableContainer({
-      title: 'Active Transfers - Section 4 Procedures',
-      description: 'Record AV scan results, perform transfers, and complete DTA signature workflow',
-      table,
-      className: 'bg-[var(--card)] rounded-lg border border-[var(--border)]'
-    });
+    return `
+      <div class="action-panel">
+        ${table}
+      </div>
+    `;
+  }
+
+  private static buildSimpleTable(columns: any[], data: any[]): string {
+    if (data.length === 0) {
+      return `<div class="text-center p-8">No active transfers found</div>`;
+    }
+
+    const headerRow = columns.map(col => `<th class="p-3 text-left font-medium">${col.label}</th>`).join('');
+    const dataRows = data.map(row => {
+      const cells = columns.map(col => {
+        const value = col.render ? col.render(row[col.key], row) : row[col.key];
+        return `<td class="p-3">${value}</td>`;
+      }).join('');
+      return `<tr class="border-t">${cells}</tr>`;
+    }).join('');
+
+    return `
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead class="bg-muted">
+            <tr>${headerRow}</tr>
+          </thead>
+          <tbody>
+            ${dataRows}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   static getScript(): string {

@@ -35,7 +35,7 @@ Bun.serve({
     }
     
     // Handle API routes
-    if (path.startsWith('/api/') || path.startsWith('/media-custodian/api/')) {
+    if (path.startsWith('/api/')) {
       return applySecurityHeaders(await handleAPI(request, path, ipAddress));
     }
     

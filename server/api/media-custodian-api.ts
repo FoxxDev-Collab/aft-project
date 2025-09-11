@@ -467,7 +467,8 @@ export class MediaCustodianAPI {
     requestId: number, 
     action: string, 
     userId: number, 
-    notes?: string
+    notes?: string,
+    dispositionData?: any
   ): Promise<{ success: boolean; message: string; newStatus?: string }> {
     const db = getDb();
     
@@ -503,7 +504,7 @@ export class MediaCustodianAPI {
           break;
           
         case 'dispose':
-          if (request.status === 'completed') {
+          if (request.status === 'completed' || request.status === 'pending_media_custodian') {
             newStatus = 'disposed';
             message = 'Media has been disposed';
           } else {
@@ -511,8 +512,57 @@ export class MediaCustodianAPI {
           }
           break;
           
+        case 'dispose_and_return_drive':
+          if (request.status === 'completed' || request.status === 'pending_media_custodian') {
+            // First dispose the media
+            newStatus = 'disposed';
+            message = 'Media has been disposed and drive returned';
+            
+            // Return the drive if one is associated
+            if (request.selected_drive_id) {
+              const returnResult = await this.returnDrive(request.selected_drive_id);
+              if (!returnResult.success) {
+                return { success: false, message: `Disposition completed but failed to return drive: ${returnResult.message}` };
+              }
+            }
+          } else {
+            return { success: false, message: 'Request must be completed before disposal' };
+          }
+          break;
+          
         default:
           return { success: false, message: 'Invalid action specified' };
+      }
+
+      // Store disposition data if provided
+      if (dispositionData && (action === 'dispose' || action === 'dispose_and_return_drive')) {
+        const dispositionDate = dispositionData.dispositionDate ? 
+          Math.floor(new Date(dispositionData.dispositionDate).getTime() / 1000) : 
+          Math.floor(Date.now() / 1000);
+
+        db.query(`
+          UPDATE aft_requests 
+          SET disposition_optical_destroyed = ?,
+              disposition_optical_retained = ?,
+              disposition_ssd_sanitized = ?,
+              disposition_custodian_name = ?,
+              disposition_date = ?,
+              disposition_signature = ?,
+              disposition_notes = ?,
+              disposition_completed_at = ?,
+              updated_at = unixepoch()
+          WHERE id = ?
+        `).run(
+          dispositionData.opticalDestroyed || 'na',
+          dispositionData.opticalRetained || 'na',
+          dispositionData.ssdSanitized || 'na',
+          dispositionData.custodianName,
+          dispositionDate,
+          dispositionData.digitalSignature,
+          dispositionData.notes || '',
+          Math.floor(Date.now() / 1000),
+          requestId
+        );
       }
 
       // Update request status using RequestTrackingService
@@ -743,7 +793,8 @@ export async function handleMediaCustodianAPI(request: Request, path: string, ip
         requestId,
         requestBody.action,
         requestBody.userId,
-        requestBody.notes
+        requestBody.notes,
+        requestBody // Pass the entire request body as disposition data
       );
       
       return new Response(JSON.stringify(result), {
@@ -789,6 +840,72 @@ export async function handleMediaCustodianAPI(request: Request, path: string, ip
       });
     } catch (error) {
       return new Response(JSON.stringify({ error: 'Failed to check drive return status' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // Return drive from AFT request
+  if (apiPath === '/api/return-drive' && request.method === 'POST') {
+    try {
+      const requestBody = await request.json() as any;
+      const { driveId, requestId, userId } = requestBody;
+      
+      if (!driveId || !requestId || !userId) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          message: 'Missing required parameters: driveId, requestId, userId' 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const db = getDb();
+      
+      // Verify the request is completed or disposed
+      const aftRequest = db.query(`
+        SELECT id, status, request_number 
+        FROM aft_requests 
+        WHERE id = ? AND status IN ('completed', 'disposed')
+      `).get(requestId) as any;
+      
+      if (!aftRequest) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          message: 'Request not found or not in completed/disposed status' 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Return the drive
+      const result = await MediaCustodianAPI.returnDrive(driveId);
+      
+      if (result.success) {
+        // Add audit entry for the drive return
+        RequestTrackingService.addAuditEntry(
+          requestId,
+          userId,
+          'drive_returned',
+          undefined,
+          undefined,
+          JSON.stringify({ driveId, action: 'return_to_inventory' }),
+          'Drive returned to inventory by media custodian'
+        );
+      }
+      
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Failed to return drive to inventory' 
+      }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       });

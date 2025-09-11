@@ -8,6 +8,7 @@ import { DTADataManagement } from "../../dta/data";
 import { DTAAllRequests } from "../../dta/all-requests";
 import { DTAReports } from "../../dta/reports";
 import { DTARequestReviewPage } from "../../dta/request-review";
+import { DTATransferForm } from "../../dta/transfer-form";
 import { createHtmlPage } from "../utils";
 
 // DTA Routes Handler
@@ -98,6 +99,16 @@ export async function handleDTARoutes(request: Request, path: string, ipAddress:
           "AFT - DTA Request Review",
           reviewHtml,
           DTARequestReviewPage.getScript()
+        ), {
+          headers: { "Content-Type": "text/html" }
+        });
+      } else if (path.startsWith('/dta/transfer/') && path.split('/').length === 4) {
+        const requestId = path.split('/')[3] ?? '';
+        const transferFormHtml = await DTATransferForm.render(user, requestId, userId);
+        return new Response(createHtmlPage(
+          "AFT - DTA Transfer Form",
+          transferFormHtml,
+          DTATransferForm.getScript()
         ), {
           headers: { "Content-Type": "text/html" }
         });

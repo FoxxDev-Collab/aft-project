@@ -112,6 +112,17 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         // If request_number collides with another record, make it unique (excluding this draft id)
         requestData.media_control_number = ensureUniqueRequestNumber(requestData.media_control_number, requestId);
         
+        // Get the drive assigned to the selected DTA
+        let selectedDriveId = null;
+        if (requestData.dta_id) {
+          const dtaDrive = db.query(`
+            SELECT id FROM media_drives 
+            WHERE issued_to_user_id = ? AND status = 'issued'
+            ORDER BY issued_at DESC LIMIT 1
+          `).get(parseInt(requestData.dta_id)) as any;
+          selectedDriveId = dtaDrive?.id || null;
+        }
+        
         db.query(`
           UPDATE aft_requests SET
             request_number = ?,
@@ -127,6 +138,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
             source_system = ?,
             source_location = ?,
             dta_id = ?,
+            selected_drive_id = ?,
             dest_system = ?,
             dest_location = ?,
             dest_contact = ?,
@@ -150,6 +162,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
           requestData.source_is || '',
           requestData.source_classification || '',
           requestData.dta_id ? parseInt(requestData.dta_id) : null,
+          selectedDriveId,
           requestData.dest_system || '',
           requestData.dest_location || '',
           requestData.destination_poc || '',
@@ -163,24 +176,31 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         );
       } else {
         // Create new draft
-        // If desired request_number already exists, generate a unique one
+        // Ensure unique request number
         requestData.media_control_number = ensureUniqueRequestNumber(requestData.media_control_number);
+        
+        // Get the drive assigned to the selected DTA
+        let selectedDriveId = null;
+        if (requestData.dta_id) {
+          const dtaDrive = db.query(`
+            SELECT id FROM media_drives 
+            WHERE issued_to_user_id = ? AND status = 'issued'
+            ORDER BY issued_at DESC LIMIT 1
+          `).get(parseInt(requestData.dta_id)) as any;
+          selectedDriveId = dtaDrive?.id || null;
+        }
+        
         const result = db.query(`
           INSERT INTO aft_requests (
-            request_number, requestor_id, status, requestor_name, requestor_org, 
-            requestor_phone, requestor_email, transfer_purpose, transfer_type, 
-            classification, data_description, source_system, source_location,
-            dta_id,
-            dest_system, dest_location, dest_contact, files_list, 
-            additional_file_list_attached, compression_required, encryption,
-            transfer_data,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
-          RETURNING id
-        `).get(
+            request_number, status, requestor_id, requestor_name, requestor_org, requestor_phone, requestor_email,
+            transfer_purpose, transfer_type, classification, data_description, source_system, source_location,
+            dta_id, selected_drive_id, dest_system, dest_location, dest_contact, files_list, additional_file_list_attached,
+            compression_required, encryption, transfer_data, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+        `).run(
           requestData.media_control_number,
-          authResult.session.userId,
           'draft',
+          authResult.session.userId,
           authResult.session.email.split('@')[0], // Extract name from email
           'AFT System', // Default org
           '555-0000', // Default phone
@@ -192,6 +212,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
           requestData.source_is || '',
           requestData.source_classification || '',
           requestData.dta_id ? parseInt(requestData.dta_id) : null,
+          selectedDriveId,
           requestData.dest_system || '',
           requestData.dest_location || '',
           requestData.destination_poc || '',

@@ -8,17 +8,25 @@ export class RequestReviewPage {
   static async render(user: ApproverUser, requestId: string): Promise<string> {
     const db = getDb();
     
-    // Get request details
+    // Get request details with complete information
     const request = db.query(`
       SELECT 
         r.*, 
         u.email as requestor_email,
         u.first_name || ' ' || u.last_name as requestor_name,
         u.organization as requestor_org,
-        du.first_name || ' ' || du.last_name as dta_name
+        u.phone as requestor_phone,
+        du.first_name || ' ' || du.last_name as dta_name,
+        du.email as dta_email,
+        du.phone as dta_phone,
+        md.serial_number as drive_serial,
+        md.type as drive_type,
+        md.model as drive_model,
+        md.status as drive_status
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
       LEFT JOIN users du ON r.dta_id = du.id
+      LEFT JOIN media_drives md ON r.selected_drive_id = md.id
       WHERE r.id = ?
     `).get(requestId) as any;
 
@@ -135,7 +143,7 @@ export class RequestReviewPage {
               <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Source System</label>
               <p class="text-base font-medium text-[var(--foreground)] flex items-center gap-2 mt-1">
                 ${ServerIcon({ size: 16 })}
-                ${request.source_system}
+                ${request.source_system || 'Not specified'}
               </p>
             </div>
             <div>
@@ -145,12 +153,6 @@ export class RequestReviewPage {
                 ${request.dest_system || 'Not specified'}
               </p>
             </div>
-            ${request.dta_name ? `
-            <div class="col-span-2">
-              <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Assigned DTA</label>
-              <p class="text-sm text-[var(--foreground)] mt-1">${request.dta_name}</p>
-            </div>
-            ` : ''}
             <div>
               <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Classification</label>
               <p class="text-base font-medium text-[var(--foreground)] flex items-center gap-2 mt-1">
@@ -163,13 +165,6 @@ export class RequestReviewPage {
               <p class="text-base font-medium text-[var(--foreground)]">${request.transfer_type || 'Standard'}</p>
             </div>
           </div>
-          
-          ${(request.data_description || request.description) ? `
-            <div>
-              <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Description</label>
-              <p class="text-sm text-[var(--foreground)] mt-1">${request.data_description || request.description}</p>
-            </div>
-          ` : ''}
         </div>
       `
     });
@@ -258,8 +253,10 @@ export class RequestReviewPage {
         <div class="p-6 pb-4">
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Business Justification</h3>
         </div>
-        <div class="p-6 pt-0 prose prose-sm max-w-none text-[var(--foreground)]">
-          ${request.justification || '<p class="text-[var(--muted-foreground)]">No justification provided</p>'}
+        <div class="p-6 pt-0">
+          <div class="text-sm text-[var(--foreground)] whitespace-pre-wrap">
+            ${request.transfer_purpose || request.justification || 'No justification provided'}
+          </div>
         </div>
       `
     });
@@ -360,7 +357,7 @@ export class RequestReviewPage {
         <div class="p-6 pb-4">
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Requestor Information</h3>
         </div>
-        <div class="p-6 pt-0 space-y-3">
+        <div class="p-6 pt-0 space-y-4">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
               ${UserIcon({ size: 20 })}
@@ -376,6 +373,31 @@ export class RequestReviewPage {
               <p class="text-sm text-[var(--foreground)] mt-1">${request.requestor_org}</p>
             </div>
           ` : ''}
+          ${request.dta_name ? `
+            <div class="border-t border-[var(--border)] pt-4">
+              <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Assigned DTA</label>
+              <div class="flex items-center gap-3 mt-2">
+                <div class="w-8 h-8 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center text-xs font-medium">
+                  ${request.dta_name.split(' ').map((n: string) => n[0]).join('')}
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-[var(--foreground)]">${request.dta_name}</p>
+                  <p class="text-xs text-[var(--muted-foreground)]">${request.dta_email || 'No email available'}</p>
+                </div>
+              </div>
+              ${request.drive_serial ? `
+                <div class="mt-3 p-3 bg-[var(--muted)] rounded-md">
+                  <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Assigned Drive</label>
+                  <p class="text-sm font-medium text-[var(--foreground)] mt-1">${request.drive_serial}</p>
+                  <p class="text-xs text-[var(--muted-foreground)]">${request.drive_type} ${request.drive_model} - ${request.drive_status}</p>
+                </div>
+              ` : ''}
+            </div>
+          ` : `
+            <div class="border-t border-[var(--border)] pt-4">
+              <p class="text-sm text-[var(--muted-foreground)]">No DTA assigned yet</p>
+            </div>
+          `}
         </div>
       `
     });

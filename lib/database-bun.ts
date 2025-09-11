@@ -195,9 +195,38 @@ function createTables() {
       db.exec("ALTER TABLE aft_requests ADD COLUMN tpi_maintained BOOLEAN DEFAULT 0");
     }
     
-    console.log("✓ DTA Section 4 migrations completed successfully");
+    // Section V Media Disposition fields
+    if (!existingCols.includes('disposition_optical_destroyed')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_optical_destroyed TEXT");
+    }
+    if (!existingCols.includes('disposition_optical_retained')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_optical_retained TEXT");
+    }
+    if (!existingCols.includes('disposition_ssd_sanitized')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_ssd_sanitized TEXT");
+    }
+    if (!existingCols.includes('disposition_custodian_name')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_custodian_name TEXT");
+    }
+    if (!existingCols.includes('disposition_date')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_date INTEGER");
+    }
+    if (!existingCols.includes('disposition_signature')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_signature TEXT");
+    }
+    if (!existingCols.includes('disposition_notes')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_notes TEXT");
+    }
+    if (!existingCols.includes('disposition_completed_at')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN disposition_completed_at INTEGER");
+    }
+    if (!existingCols.includes('additional_systems')) {
+      db.exec("ALTER TABLE aft_requests ADD COLUMN additional_systems TEXT");
+    }
+    
+    console.log("✓ DTA Section 4 and Media Disposition migrations completed successfully");
   } catch (e) {
-    console.error('Failed to migrate aft_requests schema for DTA Section 4:', e);
+    console.error('Failed to migrate aft_requests schema for DTA Section 4 and Media Disposition:', e);
   }
 
   // AFT Requests table
@@ -253,7 +282,17 @@ function createTables() {
       approval_data TEXT,
       rejection_reason TEXT,
       created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
+      updated_at INTEGER DEFAULT (unixepoch()),
+      -- Media Disposition fields (Section V)
+      disposition_optical_destroyed TEXT,
+      disposition_optical_retained TEXT,
+      disposition_ssd_sanitized TEXT,
+      disposition_custodian_name TEXT,
+      disposition_date INTEGER,
+      disposition_signature TEXT,
+      disposition_notes TEXT,
+      disposition_completed_at INTEGER,
+      additional_systems TEXT
     )
   `);
 
@@ -478,15 +517,6 @@ async function initializeDatabase() {
           status: 'available'
         },
         {
-          serial_number: 'MD-HDD-003-2024',
-          media_control_number: 'MCN-003-2024',
-          type: 'HDD',
-          model: 'Seagate IronWolf Pro',
-          capacity: '4TB',
-          location: 'Secure Storage B-1',
-          status: 'available'
-        },
-        {
           serial_number: 'MD-SSD-004-2024',
           media_control_number: 'MCN-004-2024',
           type: 'SSD-T',
@@ -532,13 +562,6 @@ async function initializeDatabase() {
 
       console.log(`✓ Seeded ${testMediaDrives.length} drives in media drives inventory`);
     }
-
-    // Run seeder for sample requests after user initialization is complete
-    import("./database-seeder").then(seeder => {
-      // Seeder runs automatically on import
-    }).catch(err => {
-      console.error("Failed to run seeder:", err);
-    });
 
   } catch (error) {
     console.error('Database initialization failed:', error);

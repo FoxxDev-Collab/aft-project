@@ -8,17 +8,25 @@ export class DTARequestReviewPage {
   static async render(user: DTAUser, requestId: string, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get request details
+    // Get request details with complete information
     const request = db.query(`
       SELECT 
         r.*, 
         u.email as requestor_email,
         u.first_name || ' ' || u.last_name as requestor_name,
         u.organization as requestor_org,
-        du.first_name || ' ' || du.last_name as dta_name
+        u.phone as requestor_phone,
+        du.first_name || ' ' || du.last_name as dta_name,
+        du.email as dta_email,
+        du.phone as dta_phone,
+        md.serial_number as drive_serial,
+        md.type as drive_type,
+        md.model as drive_model,
+        md.status as drive_status
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
       LEFT JOIN users du ON r.dta_id = du.id
+      LEFT JOIN media_drives md ON r.selected_drive_id = md.id
       WHERE r.id = ? AND r.dta_id = ?
     `).get(requestId, userId) as any;
 
@@ -145,12 +153,6 @@ export class DTARequestReviewPage {
                 ${request.dest_system || 'Not specified'}
               </p>
             </div>
-            ${request.dta_name ? `
-            <div class="col-span-2">
-              <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Assigned DTA</label>
-              <p class="text-sm text-[var(--foreground)] mt-1">${request.dta_name}</p>
-            </div>
-            ` : ''}
             <div>
               <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Classification</label>
               <p class="text-base font-medium text-[var(--foreground)] flex items-center gap-2 mt-1">
@@ -197,10 +199,7 @@ export class DTARequestReviewPage {
     return ComponentBuilder.card({
       children: `
         <div class="p-6 pb-4">
-          <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)] flex items-center gap-2">
-            ${ServerIcon({ size: 18 })}
-            Destination Systems
-          </h3>
+          <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Destination Systems</h3>
         </div>
         <div class="p-6 pt-0 space-y-2">
           ${list.map(d => `
@@ -224,10 +223,7 @@ export class DTARequestReviewPage {
     return ComponentBuilder.card({
       children: `
         <div class="p-6 pb-4">
-          <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)] flex items-center gap-2">
-            ${FileTextIcon({ size: 20 })}
-            Files to Transfer
-          </h3>
+          <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Files to Transfer</h3>
         </div>
         <div class="p-6 pt-0 space-y-2">
           ${files.length > 0 ? files.map((file: any) => {
@@ -258,8 +254,10 @@ export class DTARequestReviewPage {
         <div class="p-6 pb-4">
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Business Justification</h3>
         </div>
-        <div class="p-6 pt-0 prose prose-sm max-w-none text-[var(--foreground)]">
-          ${request.justification || '<p class="text-[var(--muted-foreground)]">No justification provided</p>'}
+        <div class="p-6 pt-0">
+          <div class="text-sm text-[var(--foreground)] whitespace-pre-wrap">
+            ${request.transfer_purpose || request.justification || 'No justification provided'}
+          </div>
         </div>
       `
     });
@@ -366,7 +364,7 @@ export class DTARequestReviewPage {
         <div class="p-6 pb-4">
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Requestor Information</h3>
         </div>
-        <div class="p-6 pt-0 space-y-3">
+        <div class="p-6 pt-0 space-y-4">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
               ${UserIcon({ size: 20 })}
@@ -382,6 +380,31 @@ export class DTARequestReviewPage {
               <p class="text-sm text-[var(--foreground)] mt-1">${request.requestor_org}</p>
             </div>
           ` : ''}
+          ${request.dta_name ? `
+            <div class="border-t border-[var(--border)] pt-4">
+              <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Assigned DTA</label>
+              <div class="flex items-center gap-3 mt-2">
+                <div class="w-8 h-8 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center text-xs font-medium">
+                  ${request.dta_name.split(' ').map((n: string) => n[0]).join('')}
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-[var(--foreground)]">${request.dta_name}</p>
+                  <p class="text-xs text-[var(--muted-foreground)]">${request.dta_email || 'No email available'}</p>
+                </div>
+              </div>
+              ${request.drive_serial ? `
+                <div class="mt-3 p-3 bg-[var(--muted)] rounded-md">
+                  <label class="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">Assigned Drive</label>
+                  <p class="text-sm font-medium text-[var(--foreground)] mt-1">${request.drive_serial}</p>
+                  <p class="text-xs text-[var(--muted-foreground)]">${request.drive_type} ${request.drive_model} - ${request.drive_status}</p>
+                </div>
+              ` : ''}
+            </div>
+          ` : `
+            <div class="border-t border-[var(--border)] pt-4">
+              <p class="text-sm text-[var(--muted-foreground)]">No DTA assigned yet</p>
+            </div>
+          `}
         </div>
       `
     });
@@ -465,23 +488,18 @@ export class DTARequestReviewPage {
       }
       
       function manageTransfer(requestId) {
-        // Navigate to transfer management (could be a dedicated page or modal)
-        fetch('/api/dta/requests/' + requestId + '/transfer-status')
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              showTransferManagementModal(data.request, data.transferStatus);
-            } else {
-              alert('Failed to load transfer status: ' + data.error);
-            }
-          })
-          .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to load transfer status.');
-          });
+        // Navigate to active transfers page
+        window.location.href = '/dta/active';
       }
       
       function showTransferManagementModal(request, transferStatus) {
+        // Provide default values for transferStatus to prevent undefined errors
+        const status = transferStatus || {};
+        const originationScan = status.origination_scan_performed || false;
+        const destinationScan = status.destination_scan_performed || false;
+        const transferCompleted = status.transfer_completed || false;
+        const dtaSignature = status.dta_signature || false;
+        
         const modalBackdrop = document.createElement('div');
         modalBackdrop.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
         modalBackdrop.onclick = (e) => {
@@ -498,7 +516,7 @@ export class DTARequestReviewPage {
             <div class="flex items-center justify-between mb-6">
               <div>
                 <h2 class="text-2xl font-bold text-[var(--foreground)]">Transfer Management</h2>
-                <p class="text-[var(--muted-foreground)]">Request #\${request.request_number} - Section 4 Procedures</p>
+                <p class="text-[var(--muted-foreground)]">Request #\${request.request_number || request.id} - Section 4 Procedures</p>
               </div>
               <button onclick="this.closest('.fixed').remove()" class="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-2xl font-bold">&times;</button>
             </div>
@@ -510,10 +528,10 @@ export class DTARequestReviewPage {
                   <div>
                     <label class="text-sm font-medium text-[var(--muted-foreground)]">Origination Scan</label>
                     <div class="flex items-center gap-2 mt-1">
-                      <span class="\${transferStatus.origination_scan_performed ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}">
-                        \${transferStatus.origination_scan_performed ? '✓ Completed' : '○ Pending'}
+                      <span class="\${originationScan ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}">
+                        \${originationScan ? '✓ Completed' : '○ Pending'}
                       </span>
-                      \${!transferStatus.origination_scan_performed ? \`
+                      \${!originationScan ? \`
                         <button onclick="recordScan(\${request.id}, 'origination')" 
                                 class="text-xs bg-[var(--primary)] text-[var(--primary-foreground)] px-2 py-1 rounded">
                           Record Scan
@@ -524,10 +542,10 @@ export class DTARequestReviewPage {
                   <div>
                     <label class="text-sm font-medium text-[var(--muted-foreground)]">Destination Scan</label>
                     <div class="flex items-center gap-2 mt-1">
-                      <span class="\${transferStatus.destination_scan_performed ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}">
-                        \${transferStatus.destination_scan_performed ? '✓ Completed' : '○ Pending'}
+                      <span class="\${destinationScan ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}">
+                        \${destinationScan ? '✓ Completed' : '○ Pending'}
                       </span>
-                      \${!transferStatus.destination_scan_performed ? \`
+                      \${!destinationScan ? \`
                         <button onclick="recordScan(\${request.id}, 'destination')" 
                                 class="text-xs bg-[var(--primary)] text-[var(--primary-foreground)] px-2 py-1 rounded">
                           Record Scan
@@ -543,9 +561,9 @@ export class DTARequestReviewPage {
                 <div class="space-y-3">
                   <div>
                     <label class="text-sm font-medium text-[var(--muted-foreground)]">Transfer Status</label>
-                    <div class="text-[var(--foreground)]">\${transferStatus.transfer_completed ? 'Completed' : 'In Progress'}</div>
+                    <div class="text-[var(--foreground)]">\${transferCompleted ? 'Completed' : 'In Progress'}</div>
                   </div>
-                  \${transferStatus.origination_scan_performed && transferStatus.destination_scan_performed && !transferStatus.transfer_completed ? \`
+                  \${originationScan && destinationScan && !transferCompleted ? \`
                     <button onclick="completeTransfer(\${request.id})" 
                             class="bg-[var(--success)] text-white px-4 py-2 rounded-md font-medium">
                       Mark Transfer Complete
@@ -559,9 +577,9 @@ export class DTARequestReviewPage {
                 <div class="space-y-3">
                   <div>
                     <label class="text-sm font-medium text-[var(--muted-foreground)]">DTA Approval</label>
-                    <div class="text-[var(--foreground)]">\${transferStatus.dta_signature ? 'Signed' : 'Pending'}</div>
+                    <div class="text-[var(--foreground)]">\${dtaSignature ? 'Signed' : 'Pending'}</div>
                   </div>
-                  \${transferStatus.transfer_completed && !transferStatus.dta_signature ? \`
+                  \${transferCompleted && !dtaSignature ? \`
                     <button onclick="signDTA(\${request.id})" 
                             class="bg-[var(--primary)] text-[var(--primary-foreground)] px-4 py-2 rounded-md font-medium">
                       Sign as DTA

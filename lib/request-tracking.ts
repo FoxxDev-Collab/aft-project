@@ -71,99 +71,102 @@ export class RequestTrackingService {
   
   // Generate timeline steps from request data and audit entries
   private static generateTimelineSteps(request: any, auditEntries: RequestAuditEntry[]): TimelineStep[] {
-    const steps: TimelineStep[] = [];
     const statusFlow = this.getStatusFlow(request.status, request.transfer_type);
-    
-    // Create a map of status changes from audit entries
-    const statusChanges = new Map<string, RequestAuditEntry>();
-    auditEntries.forEach(entry => {
-      if (entry.new_status && entry.action === 'status_change') {
-        statusChanges.set(entry.new_status, entry);
-      }
+    const statusEvents = new Map<AFTStatusType, RequestAuditEntry>();
+
+    // The first audit entry for a request is its creation, which we map to the DRAFT status.
+    if (auditEntries.length > 0) {
+        statusEvents.set(AFTStatus.DRAFT, auditEntries[0]!);
+    }
+
+    // Map subsequent status changes to their respective events.
+    for (const entry of auditEntries) {
+        if (entry.action === 'status_change' && entry.new_status) {
+            statusEvents.set(entry.new_status as AFTStatusType, entry);
+        }
+    }
+
+    const currentStatusIndex = statusFlow.indexOf(request.status as AFTStatusType);
+
+    return statusFlow.map((status, index) => {
+        const event = statusEvents.get(status);
+        let stepStatus: TimelineStep['status'];
+
+        if (index < currentStatusIndex) {
+            stepStatus = 'completed';
+        } else if (index === currentStatusIndex) {
+            stepStatus = 'current';
+        } else {
+            stepStatus = 'pending';
+        }
+
+        if (request.status === AFTStatus.REJECTED || request.status === AFTStatus.CANCELLED) {
+            if (status === request.status) {
+                stepStatus = 'error';
+            } else if (index > currentStatusIndex) {
+                stepStatus = 'skipped';
+            }
+        }
+
+        return {
+            id: status,
+            title: AFT_STATUS_LABELS[status] || status,
+            description: this.getStatusDescription(status),
+            status: stepStatus,
+            timestamp: event?.created_at,
+            assignedTo: event?.user_name || this.getDefaultAssignee(status),
+            notes: event?.notes,
+            duration: this.calculateStepDuration(status, auditEntries, request)
+        };
     });
-    
-    // Generate steps for each status in the flow
-    statusFlow.forEach((status, index) => {
-      const auditEntry = statusChanges.get(status);
-      const isCompleted = this.isStatusCompleted(status, request.status, request.transfer_type);
-      const isCurrent = status === request.status;
-      const isPending = this.isStatusPending(status, request.status, request.transfer_type);
-      
-      let stepStatus: TimelineStep['status'] = 'pending';
-      if (isCompleted) stepStatus = 'completed';
-      else if (isCurrent) stepStatus = 'current';
-      else if (isPending) stepStatus = 'pending';
-      
-      // Handle rejected/cancelled states
-      if (request.status === AFTStatus.REJECTED || request.status === AFTStatus.CANCELLED) {
-        if (isCompleted) stepStatus = 'completed';
-        else if (isCurrent) stepStatus = 'error';
-        else stepStatus = 'skipped';
-      }
-      
-      const step: TimelineStep = {
-        id: status,
-        title: AFT_STATUS_LABELS[status as keyof typeof AFT_STATUS_LABELS] || status,
-        description: this.getStatusDescription(status),
-        status: stepStatus,
-        timestamp: auditEntry?.created_at || (status === AFTStatus.DRAFT ? request.created_at : undefined),
-        assignedTo: auditEntry?.user_name || this.getDefaultAssignee(status),
-        notes: auditEntry?.notes,
-        duration: this.calculateStepDuration(status, auditEntries, request)
-      };
-      
-      steps.push(step);
-    });
-    
-    return steps;
-  }
+}
   
   // Get the expected status flow for a request type
-  private static getStatusFlow(currentStatus: string, transferType?: string): string[] {
-    // Determine flow based on transfer type
-    // High-to-Low includes DAO review, others skip it
-    const baseFlow: string[] = [
+  private static getStatusFlow(requestStatus: AFTStatusType, transferType?: string): AFTStatusType[] {
+    const highToLowFlow: AFTStatusType[] = [
       AFTStatus.DRAFT,
-      AFTStatus.SUBMITTED
-    ];
-    
-    // Only include DAO step for high-to-low transfers
-    if (transferType === 'high-to-low') {
-      baseFlow.push(AFTStatus.PENDING_DAO);
-    }
-    
-    // Continue with rest of flow
-    baseFlow.push(
+      AFTStatus.SUBMITTED,
+      AFTStatus.PENDING_DAO,
       AFTStatus.PENDING_APPROVER,
       AFTStatus.PENDING_CPSO,
       AFTStatus.APPROVED,
       AFTStatus.PENDING_DTA,
       AFTStatus.ACTIVE_TRANSFER,
       AFTStatus.PENDING_SME_SIGNATURE,
-      AFTStatus.PENDING_SME,
-      AFTStatus.PENDING_MEDIA_CUSTODIAN,
       AFTStatus.COMPLETED,
+      AFTStatus.PENDING_MEDIA_CUSTODIAN,
       AFTStatus.DISPOSED
-    );
-    
-    // Handle terminal states
-    if (currentStatus === AFTStatus.REJECTED) {
-      const approvedIndex = baseFlow.indexOf(AFTStatus.APPROVED);
-      const flowToApproved = baseFlow.slice(0, approvedIndex + 1);
-      return [...flowToApproved, AFTStatus.REJECTED];
+    ];
+
+    const standardFlow: AFTStatusType[] = [
+      AFTStatus.DRAFT,
+      AFTStatus.SUBMITTED,
+      AFTStatus.PENDING_APPROVER,
+      AFTStatus.PENDING_CPSO,
+      AFTStatus.APPROVED,
+      AFTStatus.PENDING_DTA,
+      AFTStatus.ACTIVE_TRANSFER,
+      AFTStatus.PENDING_SME_SIGNATURE,
+      AFTStatus.COMPLETED,
+      AFTStatus.PENDING_MEDIA_CUSTODIAN,
+      AFTStatus.DISPOSED
+    ];
+
+    let flow = (transferType === 'high_to_low') ? highToLowFlow : standardFlow;
+
+    // If a terminal status is reached, adjust the flow to show the final state correctly
+    if (requestStatus === AFTStatus.REJECTED || requestStatus === AFTStatus.CANCELLED) {
+        const lastCompletedStepIndex = flow.indexOf(requestStatus) > -1 ? flow.indexOf(requestStatus) : highToLowFlow.indexOf(requestStatus);
+        if(lastCompletedStepIndex > -1) {
+            return [...flow.slice(0, lastCompletedStepIndex), requestStatus];
+        }
     }
-    
-    if (currentStatus === AFTStatus.CANCELLED) {
-      const currentIndex = baseFlow.indexOf(currentStatus);
-      const flowToCurrent = baseFlow.slice(0, currentIndex >= 0 ? currentIndex + 1 : baseFlow.length);
-      return [...flowToCurrent, AFTStatus.CANCELLED];
-    }
-    
-    return baseFlow;
-  }
+
+    return flow;
+}
   
   // Check if a status has been completed
-  private static isStatusCompleted(status: string, currentStatus: string, transferType?: string): boolean {
+  private static isStatusCompleted(status: AFTStatusType, currentStatus: AFTStatusType, transferType?: string): boolean {
     const flow = this.getStatusFlow(currentStatus, transferType);
     const statusIndex = flow.indexOf(status);
     const currentIndex = flow.indexOf(currentStatus);
@@ -172,7 +175,7 @@ export class RequestTrackingService {
   }
   
   // Check if a status is pending (future)
-  private static isStatusPending(status: string, currentStatus: string, transferType?: string): boolean {
+  private static isStatusPending(status: AFTStatusType, currentStatus: AFTStatusType, transferType?: string): boolean {
     const flow = this.getStatusFlow(currentStatus, transferType);
     const statusIndex = flow.indexOf(status);
     const currentIndex = flow.indexOf(currentStatus);
@@ -254,7 +257,7 @@ export class RequestTrackingService {
   }
   
   // Estimate completion time based on current status
-  private static estimateCompletion(currentStatus: string): number | undefined {
+  private static estimateCompletion(currentStatus: AFTStatusType): number | undefined {
     // Average processing times in hours for each status
     const averageTimes: Record<string, number> = {
       [AFTStatus.DRAFT]: 24,
@@ -272,7 +275,7 @@ export class RequestTrackingService {
       [AFTStatus.DISPOSED]: 0
     };
     
-    const flow = this.getStatusFlow(currentStatus);
+    const flow = this.getStatusFlow(currentStatus as AFTStatusType);
     const currentIndex = flow.indexOf(currentStatus);
     
     if (currentIndex < 0) return undefined;

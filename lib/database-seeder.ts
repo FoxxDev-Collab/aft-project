@@ -159,12 +159,15 @@ export function seedSampleRequests() {
         data_format, data_size, transfer_method, encryption, compression_required,
         files_list, additional_file_list_attached, selected_drive_id,
         requested_start_date, requested_end_date, urgency_level,
-        transfer_notes, verification_type,
-        priority, file_name, file_size, file_type, file_hash, justification, description,
-        origination_scan_performed, origination_files_scanned, origination_threats_found,
-        destination_scan_performed, tpi_maintained
+        actual_start_date, actual_end_date, transfer_notes, transfer_data, verification_type,
+        verification_results, approval_date, approval_notes, approval_data, rejection_reason,
+        created_at, updated_at, origination_scan_performed, origination_files_scanned, origination_threats_found,
+        destination_scan_performed, destination_files_scanned, destination_threats_found,
+        origination_scan_status, destination_scan_status, transfer_completed_date,
+        files_transferred_count, dta_signature_date, sme_signature_date, assigned_sme_id,
+        tpi_maintained, approver_email, priority, file_name, file_size, file_type, file_hash, justification, description
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `;
 
@@ -178,10 +181,15 @@ export function seedSampleRequests() {
       request1.data_format, request1.data_size, request1.transfer_method, request1.encryption, request1.compression_required,
       request1.files_list, request1.additional_file_list_attached, request1.selected_drive_id,
       request1.requested_start_date, request1.requested_end_date, request1.urgency_level,
-      request1.transfer_notes, request1.verification_type,
-      request1.priority, request1.file_name, request1.file_size, request1.file_type, request1.file_hash, request1.justification, request1.description,
+      null, null, request1.transfer_notes, null, request1.verification_type, // actual_start_date, actual_end_date, transfer_notes, transfer_data, verification_type
+      null, null, null, null, null, // verification_results, approval_date, approval_notes, approval_data, rejection_reason
+      Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000), // created_at, updated_at
       request1.origination_scan_performed, request1.origination_files_scanned, request1.origination_threats_found,
-      request1.destination_scan_performed, request1.tpi_maintained
+      request1.destination_scan_performed, null, 0, // destination_files_scanned, destination_threats_found
+      'pending', 'pending', null, // origination_scan_status, destination_scan_status, transfer_completed_date
+      null, null, null, smeUser.id, // files_transferred_count, dta_signature_date, sme_signature_date, assigned_sme_id
+      request1.tpi_maintained, approverUser.email || 'issm@aft.gov', // tpi_maintained, approver_email
+      request1.priority, request1.file_name, request1.file_size, request1.file_type, request1.file_hash, request1.justification, request1.description
     );
 
     // Insert Request 2
@@ -194,10 +202,15 @@ export function seedSampleRequests() {
       request2.data_format, request2.data_size, request2.transfer_method, request2.encryption, request2.compression_required,
       request2.files_list, request2.additional_file_list_attached, request2.selected_drive_id,
       request2.requested_start_date, request2.requested_end_date, request2.urgency_level,
-      request2.transfer_notes, request2.verification_type,
-      request2.priority, request2.file_name, request2.file_size, request2.file_type, request2.file_hash, request2.justification, request2.description,
+      null, null, request2.transfer_notes, null, request2.verification_type, // actual_start_date, actual_end_date, transfer_notes, transfer_data, verification_type
+      null, null, null, null, null, // verification_results, approval_date, approval_notes, approval_data, rejection_reason
+      Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000), // created_at, updated_at
       request2.origination_scan_performed, request2.origination_files_scanned, request2.origination_threats_found,
-      request2.destination_scan_performed, request2.tpi_maintained
+      request2.destination_scan_performed, null, 0, // destination_files_scanned, destination_threats_found
+      'pending', 'pending', null, // origination_scan_status, destination_scan_status, transfer_completed_date
+      null, null, null, smeUser.id, // files_transferred_count, dta_signature_date, sme_signature_date, assigned_sme_id
+      request2.tpi_maintained, approverUser.email || 'issm@aft.gov', // tpi_maintained, approver_email
+      request2.priority, request2.file_name, request2.file_size, request2.file_type, request2.file_hash, request2.justification, request2.description
     );
 
     // Media drives remain available since requests are not yet approved

@@ -7,7 +7,7 @@ import { AFT_STATUS_LABELS } from "../lib/database-bun";
 
 export class DtaRequests {
   
-  static async renderRequestsPage(user: DTAUser, viewMode: 'table' | 'timeline' = 'table', userId?: number): Promise<string> {
+  static async renderRequestsPage(user: DTAUser, viewMode: 'table' | 'timeline' = 'table', userId: number): Promise<string> {
     const db = getDb();
     
     // Get request statistics for assigned DTA
@@ -339,20 +339,8 @@ export class DtaRequests {
       }
       
       function manageTransfer(requestId) {
-        // Show transfer management modal with Section 4 controls
-        fetch(\`/api/dta/requests/\${requestId}/transfer-status\`)
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              showTransferManagementModal(data.request, data.transferStatus);
-            } else {
-              alert('Failed to load transfer status: ' + data.error);
-            }
-          })
-          .catch(error => {
-            console.error('Error fetching transfer status:', error);
-            alert('Failed to load transfer status. Please try again.');
-          });
+        // Navigate to active transfers page
+        window.location.href = '/dta/active';
       }
       
       function viewTimeline(requestId) {

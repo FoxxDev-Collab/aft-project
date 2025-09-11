@@ -2,8 +2,8 @@
 import { UserRole } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { SMEDashboard } from "../../sme/dashboard";
-import { SMERequests } from "../../sme/requests";
 import { SMEAllRequests } from "../../sme/all-requests";
+import { SMERequestSignPage } from "../../sme/request-sign";
 import { createHtmlPage } from "../utils";
 
 // SME Routes Handler
@@ -31,30 +31,45 @@ export async function handleSMERoutes(request: Request, path: string, ipAddress:
       });
 
     case '/sme/requests':
-      const requestsHtml = await SMERequests.renderRequestsPage(user);
+      const url = new URL(request.url);
+      const viewMode = url.searchParams.get('view') as 'table' | 'timeline' || 'table';
+      const requestsHtml = await SMEAllRequests.render(user, viewMode);
       return new Response(createHtmlPage(
         "AFT - SME Requests",
         requestsHtml,
-        SMERequests.getScript()
-      ), {
-        headers: { "Content-Type": "text/html" }
-      });
-
-    case '/sme/all-requests':
-      const url = new URL(request.url);
-      const viewMode = url.searchParams.get('view') as 'table' | 'timeline' || 'table';
-      const allRequestsHtml = await SMEAllRequests.render(user, viewMode);
-      return new Response(createHtmlPage(
-        "AFT - All Requests",
-        allRequestsHtml,
         SMEAllRequests.getScript()
       ), {
         headers: { "Content-Type": "text/html" }
       });
 
-    // Add other SME routes here in the future (e.g., /sme/history)
+    case '/sme/signatures':
+      // Show pending signature requests
+      const signatureQueueHtml = await SMEDashboard.renderSignatureQueue(user, userId);
+      return new Response(createHtmlPage(
+        "AFT - Signature Queue",
+        signatureQueueHtml,
+        SMEDashboard.getScript()
+      ), {
+        headers: { "Content-Type": "text/html" }
+      });
 
     default:
+      // Handle dynamic routes like /sme/sign/{id}
+      if (path.startsWith('/sme/sign/')) {
+        const requestId = path.split('/')[3];
+        if (requestId) {
+          const signHtml = await SMERequestSignPage.render(user, requestId);
+          return new Response(createHtmlPage(
+            "AFT - Sign Request",
+            signHtml,
+            SMERequestSignPage.getScript()
+          ), {
+            headers: { "Content-Type": "text/html" }
+          });
+        }
+      }
+      
+      // 404 fallback
       return new Response(createHtmlPage(
         "Page Not Found",
         `

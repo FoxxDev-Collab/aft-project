@@ -16,7 +16,7 @@ export async function handleSMEAPI(request: Request, path: string, ipAddress: st
 
   // Path: /api/sme/requests/:id
   if (pathSegments[3] === 'requests' && pathSegments.length >= 5) {
-    const requestId = parseInt(pathSegments[4], 10);
+    const requestId = parseInt(pathSegments[4] || '', 10);
     if (isNaN(requestId)) {
       return new Response(JSON.stringify({ success: false, error: 'Invalid request ID' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
@@ -27,7 +27,7 @@ export async function handleSMEAPI(request: Request, path: string, ipAddress: st
       if (!authResult.session.email || !authResult.session.userId) {
         return new Response(JSON.stringify({ success: false, error: 'User session invalid' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
       }
-      return signRequest(requestId, authResult.session.email, authResult.session.userId);
+      return signRequest(requestId, authResult.session.email, authResult.session.userId, request);
     }
   }
 
@@ -45,34 +45,51 @@ async function getRequestDetails(requestId: number): Promise<Response> {
   return new Response(JSON.stringify({ success: true, request: requestData }), { headers: { 'Content-Type': 'application/json' } });
 }
 
-async function signRequest(requestId: number, smeEmail: string, smeUserId: number): Promise<Response> {
+async function signRequest(requestId: number, smeEmail: string, smeUserId: number, request: Request): Promise<Response> {
   const db = getDb();
 
   try {
-    const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId) as any;
+    const body = await request.json() as { notes?: string };
+    const { notes } = body;
 
-    if (!request) {
+    const requestData = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId) as any;
+
+    if (!requestData) {
       return new Response(JSON.stringify({ success: false, error: 'Request not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (request.status !== 'pending_sme_signature') {
-      return new Response(JSON.stringify({ success: false, error: `Request is not pending SME signature. Current status: ${request.status}` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    if (requestData.status !== 'pending_sme_signature') {
+      return new Response(JSON.stringify({ success: false, error: `Request is not pending SME signature. Current status: ${requestData.status}` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
     db.transaction(() => {
-      db.run("UPDATE aft_requests SET status = 'completed', updated_at = unixepoch() WHERE id = ?", [requestId]);
+      // Update request status to forward to media custodian
+      db.run(`
+        UPDATE aft_requests 
+        SET status = 'pending_media_custodian', 
+            sme_signature_date = unixepoch(),
+            updated_at = unixepoch() 
+        WHERE id = ?
+      `, [requestId]);
+
+      // Add to request history
+      db.run(`
+        INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
+        VALUES (?, 'SME_SIGNED', ?, ?, unixepoch())
+      `, [requestId, smeEmail, `SME signature provided. Two-Person Integrity check completed. ${notes || ''}`]);
+
       RequestTrackingService.addAuditEntry(
         requestId,
         smeUserId,
         'sme_signed',
-        request.status,
-        'completed',
+        requestData.status,
+        'pending_media_custodian',
         undefined,
-        'SME signature provided, request is now complete.'
+        'SME signature provided, forwarded to Media Custodian for final processing.'
       );
     })();
 
-    return new Response(JSON.stringify({ success: true, message: 'Request signed successfully' }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: true, message: 'Request signed successfully and forwarded to Media Custodian' }), { headers: { 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
     console.error('Error signing request:', error);

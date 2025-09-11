@@ -72,7 +72,7 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
               updated_at = unixepoch(),
               approval_notes = ?,
               rejection_reason = NULL
-          WHERE id = ? AND status IN ('pending_approver','pending_cpso','submitted','pending_approval')
+          WHERE id = ? AND status IN ('pending_approver','pending_cpso','submitted','pending_approval','needs_revision')
         `).run(newStatus, session.email, session.email, notes || null, requestId);
         
         // Add to history
@@ -115,10 +115,10 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           });
         }
         
-        // Update request status
+        // Update request status to 'needs_revision' to preserve all data and allow editing
         db.prepare(`
           UPDATE aft_requests 
-          SET status = 'rejected',
+          SET status = 'needs_revision',
               approver_email = ?,
               approver_id = (SELECT id FROM users WHERE email = ?),
               updated_at = unixepoch(),
@@ -130,7 +130,7 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         // Add to history
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
-          VALUES (?, 'REJECTED', ?, ?, unixepoch())
+          VALUES (?, 'REJECTED_FOR_REVISION', ?, ?, unixepoch())
         `).run(requestId, session.email, `Reason: ${reason}. ${notes || ''}`);
         
         // Log the action

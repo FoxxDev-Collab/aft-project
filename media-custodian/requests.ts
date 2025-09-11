@@ -205,14 +205,107 @@ export class MediaCustodianRequests {
     });
   }
 
+  static async renderRequestProcessPage(user: MediaCustodianUser, requestId: number): Promise<string> {
+    const db = getDb();
+    
+    // Get request details with all related information
+    const request = db.query(`
+      SELECT r.*, 
+             u.email as requestor_email, 
+             u.first_name || ' ' || u.last_name as requestor_name,
+             md.serial_number as drive_serial,
+             md.media_control_number as drive_mcn,
+             md.type as drive_type,
+             md.model as drive_model
+      FROM aft_requests r
+      LEFT JOIN users u ON r.requestor_id = u.id
+      LEFT JOIN media_drives md ON r.selected_drive_id = md.id
+      WHERE r.id = ?
+    `).get(requestId) as any;
+
+    if (!request) {
+      return `
+        ${MediaCustodianNavigation.renderPageHeader('Request Not Found', 'The requested AFT request could not be found', user, '/media-custodian/requests')}
+        <div class="max-w-4xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
+          <div class="text-center">
+            <h2 class="text-2xl font-bold text-[var(--foreground)] mb-4">Request Not Found</h2>
+            <p class="text-[var(--muted-foreground)] mb-6">The request you're looking for doesn't exist or you don't have permission to view it.</p>
+            <button onclick="window.location.href='/media-custodian/requests'" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md">
+              Back to Requests
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Check if request is in the right state for processing
+    if (!['pending_media_custodian', 'completed'].includes(request.status)) {
+      return `
+        ${MediaCustodianNavigation.renderPageHeader('Cannot Process Request', 'Request is not ready for media custodian processing', user, '/media-custodian/requests')}
+        <div class="max-w-4xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
+          <div class="text-center">
+            <h2 class="text-2xl font-bold text-[var(--foreground)] mb-4">Request Not Ready</h2>
+            <p class="text-[var(--muted-foreground)] mb-6">This request is currently in "${request.status}" status and cannot be processed by media custodian at this time.</p>
+            <button onclick="window.location.href='/media-custodian/requests/${requestId}'" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md">
+              View Request Details
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Parse files list and additional systems
+    let files = [];
+    let additionalSystems = [];
+    if (request.files_list) {
+      try {
+        files = JSON.parse(request.files_list);
+      } catch {
+        files = [];
+      }
+    }
+    if (request.additional_systems) {
+      try {
+        additionalSystems = JSON.parse(request.additional_systems);
+      } catch {
+        additionalSystems = [];
+      }
+    }
+
+    // Build the disposition form
+    const dispositionForm = this.buildDispositionForm(request, files, additionalSystems, user);
+
+    return `
+      ${MediaCustodianNavigation.renderPageHeader(`Process Request ${request.request_number}`, 'Complete media disposition for AFT request', user, '/media-custodian/requests')}
+      
+      <div class="max-w-6xl mx-auto px-3 sm:px-5 lg:px-6 py-6">
+        <div class="space-y-6">
+          ${MediaCustodianNavigation.renderBreadcrumb('/media-custodian/requests/' + requestId + '/process')}
+          
+          ${dispositionForm}
+        </div>
+      </div>
+    `;
+  }
+
   static async renderRequestDetail(user: MediaCustodianUser, requestId: number): Promise<string> {
     const db = getDb();
     
-    // Get request details
+    // Get request details with drive information
     const request = db.query(`
-      SELECT r.*, u.email as requestor_email, u.first_name || ' ' || u.last_name as requestor_name
+      SELECT r.*, 
+             u.email as requestor_email, 
+             u.first_name || ' ' || u.last_name as requestor_name,
+             md.id as drive_id,
+             md.serial_number as drive_serial,
+             md.media_control_number as drive_mcn,
+             md.type as drive_type,
+             md.model as drive_model,
+             md.status as drive_status,
+             md.issued_to_user_id as drive_issued_to_user_id
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
+      LEFT JOIN media_drives md ON r.selected_drive_id = md.id
       WHERE r.id = ?
     `).get(requestId) as any;
 
@@ -265,6 +358,250 @@ export class MediaCustodianRequests {
           </div>
         </div>
       </div>
+    `;
+  }
+
+  private static buildDispositionForm(request: any, files: any[], additionalSystems: any[], user: MediaCustodianUser): string {
+    return `
+      <form id="disposition-form" class="space-y-6">
+        <!-- Request Summary Card -->
+        <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
+          <h2 class="text-xl font-bold text-[var(--foreground)] mb-4">Request Summary</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)]">Request Number</label>
+              <p class="text-sm text-[var(--muted-foreground)]">${request.request_number}</p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)]">Requestor</label>
+              <p class="text-sm text-[var(--muted-foreground)]">${request.requestor_name || request.requestor_email}</p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)]">Transfer Type</label>
+              <p class="text-sm text-[var(--muted-foreground)]">${request.transfer_type || 'Not specified'}</p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)]">Classification</label>
+              <p class="text-sm text-[var(--muted-foreground)]">${request.classification || 'Not specified'}</p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)]">Source System</label>
+              <p class="text-sm text-[var(--muted-foreground)]">${request.source_system || 'Not specified'}</p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)]">Destination System</label>
+              <p class="text-sm text-[var(--muted-foreground)]">${request.dest_system || 'Not specified'}</p>
+            </div>
+          </div>
+          
+          ${additionalSystems.length > 0 ? `
+            <div class="mt-4">
+              <label class="text-sm font-medium text-[var(--foreground)]">Additional Systems</label>
+              <div class="mt-2 space-y-2">
+                ${additionalSystems.map(system => `
+                  <div class="p-3 bg-[var(--muted)] rounded-md">
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                      <div><strong>Name:</strong> ${system.name}</div>
+                      <div><strong>Classification:</strong> ${system.classification}</div>
+                      <div><strong>Location:</strong> ${system.location}</div>
+                      <div><strong>Contact:</strong> ${system.contact}</div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Media Information Card -->
+        ${request.drive_serial ? `
+          <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
+            <h2 class="text-xl font-bold text-[var(--foreground)] mb-4">Media Information</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="text-sm font-medium text-[var(--foreground)]">Drive Type</label>
+                <p class="text-sm text-[var(--muted-foreground)]">${request.drive_type}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-[var(--foreground)]">Model</label>
+                <p class="text-sm text-[var(--muted-foreground)]">${request.drive_model}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-[var(--foreground)]">Serial Number</label>
+                <p class="text-sm text-[var(--muted-foreground)]">${request.drive_serial}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-[var(--foreground)]">Media Control Number</label>
+                <p class="text-sm text-[var(--muted-foreground)]">${request.drive_mcn || 'Not assigned'}</p>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Files Summary -->
+        ${files.length > 0 ? `
+          <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
+            <h2 class="text-xl font-bold text-[var(--foreground)] mb-4">Files Transferred (${files.length})</h2>
+            <div class="space-y-2 max-h-40 overflow-y-auto">
+              ${files.map(file => `
+                <div class="flex justify-between items-center p-2 bg-[var(--muted)] rounded text-sm">
+                  <span class="font-medium">${file.name}</span>
+                  <div class="text-right">
+                    <div class="text-[var(--muted-foreground)]">${file.type}</div>
+                    <div class="text-xs text-[var(--muted-foreground)]">${file.classification}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Section V: Media Disposition Form -->
+        <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
+          <h2 class="text-xl font-bold text-[var(--foreground)] mb-4">Section V: Media Disposition – Media Custodian</h2>
+          <p class="text-sm text-[var(--muted-foreground)] mb-6">The data transfer media has been verified as:</p>
+          
+          <div class="space-y-6">
+            <!-- Optical Media Destroyed -->
+            <div class="border border-[var(--border)] rounded-lg p-4">
+              <label class="text-sm font-medium text-[var(--foreground)] mb-3 block">Optical Media Destroyed:</label>
+              <div class="flex space-x-6">
+                <label class="flex items-center">
+                  <input type="radio" name="optical_destroyed" value="yes" class="mr-2">
+                  <span class="text-sm">Yes</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="optical_destroyed" value="no" class="mr-2">
+                  <span class="text-sm">No</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="optical_destroyed" value="na" class="mr-2" checked>
+                  <span class="text-sm">N/A</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Optical Media Retained -->
+            <div class="border border-[var(--border)] rounded-lg p-4">
+              <label class="text-sm font-medium text-[var(--foreground)] mb-3 block">Optical Media Retained:</label>
+              <div class="flex space-x-6">
+                <label class="flex items-center">
+                  <input type="radio" name="optical_retained" value="yes" class="mr-2">
+                  <span class="text-sm">Yes</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="optical_retained" value="no" class="mr-2">
+                  <span class="text-sm">No</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="optical_retained" value="na" class="mr-2" checked>
+                  <span class="text-sm">N/A</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- SSD Media Sanitized -->
+            <div class="border border-[var(--border)] rounded-lg p-4">
+              <label class="text-sm font-medium text-[var(--foreground)] mb-3 block">SSD Media Sanitized:</label>
+              <div class="flex space-x-6">
+                <label class="flex items-center">
+                  <input type="radio" name="ssd_sanitized" value="yes" class="mr-2">
+                  <span class="text-sm">Yes</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="ssd_sanitized" value="no" class="mr-2">
+                  <span class="text-sm">No</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="ssd_sanitized" value="na" class="mr-2" checked>
+                  <span class="text-sm">N/A</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Additional Notes -->
+            <div>
+              <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Additional Notes:</label>
+              <textarea 
+                id="disposition_notes" 
+                name="disposition_notes" 
+                rows="3" 
+                class="w-full p-3 border border-[var(--border)] rounded-md bg-[var(--background)] text-[var(--foreground)]"
+                placeholder="Enter any additional notes about the media disposition..."
+              ></textarea>
+            </div>
+
+            <!-- Signature Section -->
+            <div class="border-t border-[var(--border)] pt-6">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Name:</label>
+                  <input 
+                    type="text" 
+                    id="custodian_name"
+                    name="custodian_name"
+                    value="${user.email.split('@')[0]}"
+                    class="w-full p-2 border border-[var(--border)] rounded-md bg-[var(--background)] text-[var(--foreground)]"
+                    required
+                  >
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Date:</label>
+                  <input 
+                    type="date" 
+                    id="disposition_date"
+                    name="disposition_date"
+                    value="${new Date().toISOString().split('T')[0]}"
+                    class="w-full p-2 border border-[var(--border)] rounded-md bg-[var(--background)] text-[var(--foreground)]"
+                    required
+                  >
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Digital Signature:</label>
+                  <input 
+                    type="text" 
+                    id="digital_signature"
+                    name="digital_signature"
+                    placeholder="Type your full name to sign"
+                    class="w-full p-2 border border-[var(--border)] rounded-md bg-[var(--background)] text-[var(--foreground)]"
+                    required
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-between items-center">
+          <button 
+            type="button" 
+            onclick="window.location.href='/media-custodian/requests/${request.id}'"
+            class="px-6 py-2 text-sm border border-[var(--border)] rounded-md hover:bg-[var(--muted)] transition-colors"
+          >
+            Back to Request
+          </button>
+          
+          <div class="flex space-x-3">
+            <button 
+              type="button" 
+              onclick="completeDisposition(${request.id})"
+              class="px-6 py-2 text-sm bg-[var(--success)] text-white rounded-md hover:opacity-90 transition-opacity"
+            >
+              Complete Disposition
+            </button>
+            ${request.drive_serial ? `
+              <button 
+                type="button" 
+                onclick="completeAndReturnDrive(${request.id})"
+                class="px-6 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity"
+              >
+                Complete & Return Drive
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      </form>
     `;
   }
 
@@ -322,6 +659,22 @@ export class MediaCustodianRequests {
           </p>
         </div>
 
+        ${request.drive_id ? `
+          <div>
+            <h3 class="font-semibold text-[var(--foreground)] mb-3">Assigned Drive</h3>
+            <div class="bg-[var(--muted)] p-4 rounded-md">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div><dt class="font-medium">Serial Number:</dt><dd>${request.drive_serial}</dd></div>
+                <div><dt class="font-medium">MCN:</dt><dd>${request.drive_mcn || 'Not assigned'}</dd></div>
+                <div><dt class="font-medium">Type:</dt><dd>${request.drive_type}</dd></div>
+                <div><dt class="font-medium">Model:</dt><dd>${request.drive_model}</dd></div>
+                <div><dt class="font-medium">Status:</dt><dd>${request.drive_status}</dd></div>
+                <div><dt class="font-medium">Issued to DTA:</dt><dd>${request.drive_issued_to_user_id ? 'Yes' : 'No'}</dd></div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
         ${files.length > 0 ? `
           <div>
             <h3 class="font-semibold text-[var(--foreground)] mb-3">Files (${files.length})</h3>
@@ -346,9 +699,15 @@ export class MediaCustodianRequests {
             <button onclick="window.location.href='/media-custodian/requests'" class="px-4 py-2 text-sm border border-[var(--border)] rounded-md hover:bg-[var(--muted)]">
               Back to Requests
             </button>
-            <button onclick="processRequest(${request.id})" class="px-4 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">
-              Process Request
-            </button>
+            ${request.drive_id && ['completed', 'disposed'].includes(request.status) ? `
+              <button 
+                onclick="returnDriveToInventory(${request.drive_id}, '${request.drive_serial}', ${request.id})"
+                class="px-4 py-2 text-sm bg-[var(--warning)] text-white rounded-md hover:opacity-90 transition-opacity"
+                title="Return drive to available inventory"
+              >
+                Return Drive
+              </button>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -362,13 +721,13 @@ export class MediaCustodianRequests {
         <div class="space-y-4">
           ${timeline.map((event, index) => `
             <div class="flex items-start space-x-3">
-              <div class="flex-shrink-0 w-3 h-3 rounded-full ${event.completed ? 'bg-[var(--success)]' : 'bg-[var(--muted)]'} mt-1"></div>
+              <div class="flex-shrink-0 w-3 h-3 rounded-full ${event.status === 'completed' ? 'bg-[var(--success)]' : event.status === 'current' ? 'bg-[var(--primary)]' : 'bg-[var(--muted)]'} mt-1"></div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-[var(--foreground)]">${event.step_name}</p>
+                <p class="text-sm font-medium text-[var(--foreground)]">${event.title || 'Unknown Step'}</p>
                 <p class="text-xs text-[var(--muted-foreground)]">${event.description || 'No description'}</p>
-                ${event.completed_at ? `
+                ${event.timestamp ? `
                   <p class="text-xs text-[var(--muted-foreground)] mt-1">
-                    ${new Date(event.completed_at * 1000).toLocaleString()}
+                    ${new Date(event.timestamp * 1000).toLocaleString()}
                   </p>
                 ` : ''}
               </div>
@@ -419,6 +778,145 @@ export class MediaCustodianRequests {
       
       function processRequest(requestId) {
         window.location.href = '/media-custodian/requests/' + requestId + '/process';
+      }
+      
+      async function completeDisposition(requestId) {
+        const form = document.getElementById('disposition-form');
+        const formData = new FormData(form);
+        
+        // Validate required fields
+        const custodianName = formData.get('custodian_name');
+        const dispositionDate = formData.get('disposition_date');
+        const digitalSignature = formData.get('digital_signature');
+        
+        if (!custodianName || !dispositionDate || !digitalSignature) {
+          alert('Please fill in all required fields (Name, Date, Digital Signature)');
+          return;
+        }
+        
+        // Collect disposition data
+        const dispositionData = {
+          requestId: requestId,
+          action: 'dispose',
+          custodianName: custodianName,
+          dispositionDate: dispositionDate,
+          digitalSignature: digitalSignature,
+          opticalDestroyed: formData.get('optical_destroyed'),
+          opticalRetained: formData.get('optical_retained'),
+          ssdSanitized: formData.get('ssd_sanitized'),
+          notes: formData.get('disposition_notes'),
+          userId: 1 // TODO: Get from auth
+        };
+        
+        try {
+          const response = await fetch('/media-custodian/api/process', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(dispositionData)
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            alert('Media disposition completed successfully!');
+            window.location.href = '/media-custodian/requests/' + requestId;
+          } else {
+            alert('Error: ' + (result.message || 'Failed to complete disposition'));
+          }
+        } catch (error) {
+          console.error('Error completing disposition:', error);
+          alert('An error occurred while completing the disposition. Please try again.');
+        }
+      }
+      
+      async function completeAndReturnDrive(requestId) {
+        const form = document.getElementById('disposition-form');
+        const formData = new FormData(form);
+        
+        // Validate required fields
+        const custodianName = formData.get('custodian_name');
+        const dispositionDate = formData.get('disposition_date');
+        const digitalSignature = formData.get('digital_signature');
+        
+        if (!custodianName || !dispositionDate || !digitalSignature) {
+          alert('Please fill in all required fields (Name, Date, Digital Signature)');
+          return;
+        }
+        
+        if (!confirm('This will complete the disposition and return the associated drive. Are you sure?')) {
+          return;
+        }
+        
+        // Collect disposition data
+        const dispositionData = {
+          requestId: requestId,
+          action: 'dispose_and_return_drive',
+          custodianName: custodianName,
+          dispositionDate: dispositionDate,
+          digitalSignature: digitalSignature,
+          opticalDestroyed: formData.get('optical_destroyed'),
+          opticalRetained: formData.get('optical_retained'),
+          ssdSanitized: formData.get('ssd_sanitized'),
+          notes: formData.get('disposition_notes'),
+          userId: 1 // TODO: Get from auth
+        };
+        
+        try {
+          const response = await fetch('/media-custodian/api/process', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(dispositionData)
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            alert('Media disposition completed and drive returned successfully!');
+            window.location.href = '/media-custodian/requests/' + requestId;
+          } else {
+            alert('Error: ' + (result.message || 'Failed to complete disposition and return drive'));
+          }
+        } catch (error) {
+          console.error('Error completing disposition:', error);
+          alert('An error occurred while completing the disposition. Please try again.');
+        }
+      }
+      
+      async function returnDriveToInventory(driveId, driveSerial, requestId) {
+        if (!confirm(\`Are you sure you want to return drive \${driveSerial} to available inventory? This action cannot be undone.\`)) {
+          return;
+        }
+        
+        try {
+          const response = await fetch('/media-custodian/api/return-drive', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              driveId: driveId,
+              requestId: requestId,
+              userId: 1 // TODO: Get from auth
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            alert(\`Drive \${driveSerial} has been successfully returned to inventory!\`);
+            // Refresh the page to update the UI
+            window.location.reload();
+          } else {
+            alert('Error: ' + (result.message || 'Failed to return drive to inventory'));
+          }
+        } catch (error) {
+          console.error('Error returning drive:', error);
+          alert('An error occurred while returning the drive. Please try again.');
+        }
       }
       
       function viewTimeline(requestId) {
