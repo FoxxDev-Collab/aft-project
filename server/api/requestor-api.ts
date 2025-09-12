@@ -475,17 +475,44 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
     if (authResult.response) return authResult.response;
     
     try {
-      // In Bun, client certificate info would be available through the request
-      // For now, we'll simulate certificate detection
-      const hasCACCert = request.headers.get('x-client-cert') !== null;
-      const certInfo = hasCACCert ? {
-        subject: request.headers.get('x-client-cert-subject') || 'Unknown',
-        issuer: request.headers.get('x-client-cert-issuer') || 'Unknown',
-        thumbprint: request.headers.get('x-client-cert-thumbprint') || 'Unknown',
-        serialNumber: request.headers.get('x-client-cert-serial') || 'Unknown',
-        validFrom: request.headers.get('x-client-cert-valid-from') || new Date().toISOString(),
-        validTo: request.headers.get('x-client-cert-valid-to') || new Date().toISOString()
-      } : null;
+      // Extract client certificate from Caddy headers
+      // Caddy will forward the client certificate information via headers when client auth is enabled
+      
+      const clientCertSubject = request.headers.get('X-Client-Cert-Subject');
+      const clientCertIssuer = request.headers.get('X-Client-Cert-Issuer');
+      const clientCertSerial = request.headers.get('X-Client-Cert-Serial');
+      const clientCertThumbprint = request.headers.get('X-Client-Cert-Thumbprint');
+      const clientCertNotBefore = request.headers.get('X-Client-Cert-Not-Before');
+      const clientCertNotAfter = request.headers.get('X-Client-Cert-Not-After');
+      const clientCertPEM = request.headers.get('X-Client-Cert-PEM');
+      
+      let hasCACCert = false;
+      let certInfo = null;
+      
+      // Check if we have client certificate information from Caddy
+      if (clientCertSubject && clientCertIssuer) {
+        hasCACCert = true;
+        certInfo = {
+          subject: clientCertSubject,
+          issuer: clientCertIssuer,
+          serialNumber: clientCertSerial || 'Unknown',
+          thumbprint: clientCertThumbprint || 'Unknown',
+          validFrom: clientCertNotBefore || new Date().toISOString(),
+          validTo: clientCertNotAfter || new Date().toISOString(),
+          pemData: clientCertPEM || null
+        };
+        
+        console.log('CAC Certificate detected via Caddy:', {
+          subject: clientCertSubject,
+          issuer: clientCertIssuer,
+          serial: clientCertSerial
+        });
+      } else {
+        // No client certificate provided
+        hasCACCert = false;
+        certInfo = null;
+        console.log('No client certificate headers found - user may not have CAC inserted or Caddy not configured');
+      }
       
       return new Response(JSON.stringify({
         hasClientCert: hasCACCert,

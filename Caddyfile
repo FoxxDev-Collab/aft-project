@@ -1,0 +1,35 @@
+# Caddyfile for AFT application with CAC support
+localhost:3443 {
+    # Enable TLS with client certificate authentication
+    tls {
+        # Use self-signed cert for development
+        # In production, use proper certificates
+        client_auth {
+            mode require
+            # trusted_ca_certs /path/to/dod-root-ca.pem
+        }
+    }
+
+    # Pass client certificate information to the backend
+    reverse_proxy localhost:3001 {
+        # Forward client certificate details as headers
+        header_up X-Client-Cert-Subject {tls_client_subject}
+        header_up X-Client-Cert-Issuer {tls_client_issuer}
+        header_up X-Client-Cert-Serial {tls_client_serial}
+        header_up X-Client-Cert-Thumbprint {tls_client_fingerprint}
+        header_up X-Client-Cert-Not-Before {tls_client_not_before}
+        header_up X-Client-Cert-Not-After {tls_client_not_after}
+        header_up X-Client-Cert-PEM {tls_client_certificate}
+    }
+
+    # Enable detailed logging for debugging
+    log {
+        output file access.log
+        level DEBUG
+    }
+}
+
+# Also serve on HTTP for non-CAC functionality
+localhost:3001 {
+    reverse_proxy localhost:3001
+}

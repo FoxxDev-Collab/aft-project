@@ -19,16 +19,9 @@ import { handleCPSORoutes } from "./server/routes/cpso-routes";
 // Initialize security
 initializeSecurity();
 
-// Main server
+// Main server - Caddy handles TLS and client certificates
 Bun.serve({
-  port: 3001,
-  // TODO: Add TLS configuration for CAC authentication when certificates are available
-  // tls: {
-  //   cert: Bun.file("cert.pem"), // Server certificate
-  //   key: Bun.file("key.pem"),   // Server private key
-  //   requestCert: true,          // Request client certificates
-  //   rejectUnauthorized: false,  // We'll validate certificates manually
-  // },
+  port: 3001, // Caddy will proxy to this port
   
   async fetch(request: Request, server: any): Promise<Response> {
     const url = new URL(request.url);
@@ -108,3 +101,5 @@ console.log("=🚀 AFT Server running on http://localhost:3001");
 console.log("=🔧 Database initialized with multi-role support");
 console.log("=🔐 Login with: admin@aft.gov / admin123");
 console.log("=👥 Multi-role authentication enabled");
+console.log("=🔄 Configure Caddy proxy for HTTPS and CAC authentication");
+console.log("=💡 Run 'caddy run' to enable CAC support via https://localhost:3443");
