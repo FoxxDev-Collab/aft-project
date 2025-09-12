@@ -14,6 +14,14 @@ sudo systemctl disable caddy || true
 echo "Installing nginx..."
 sudo dnf install -y nginx
 
+# Create SSL directory and self-signed certificates
+echo "Creating SSL certificates..."
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/ssl/aft.foxxcyber.com.key \
+    -out /etc/nginx/ssl/aft.foxxcyber.com.crt \
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=aft.foxxcyber.com"
+
 # Copy nginx configuration
 echo "Copying nginx configuration..."
 sudo cp /home/foxx/aft-project/nginx-aft.conf /etc/nginx/conf.d/
