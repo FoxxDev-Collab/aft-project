@@ -11,12 +11,12 @@ export class DTATransferForm {
     const request = db.query(`
       SELECT 
         id, request_number, requestor_name, requestor_email,
-        source_system, source_location, destination_system, destination_location,
-        classification, file_count, total_size, justification,
+        source_system, source_location, dest_system, dest_location,
+        classification, data_size, files_list, justification,
         origination_scan_status, origination_files_scanned,
         destination_scan_status, destination_files_scanned,
         transfer_completed_date, dta_signature_date,
-        sme_user_id, status, created_at, updated_at
+        assigned_sme_id, status, created_at, updated_at
       FROM aft_requests
       WHERE id = ? AND dta_id = ?
     `).get(requestId, userId) as any;
@@ -30,7 +30,7 @@ export class DTATransferForm {
       SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
       FROM users u
       JOIN user_roles ur ON u.id = ur.user_id
-      WHERE ur.role = 'sme' AND u.active = 1
+      WHERE ur.role = 'sme' AND u.is_active = 1
       ORDER BY u.last_name, u.first_name
     `).all() as any[];
 
@@ -66,11 +66,11 @@ export class DTATransferForm {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--border)]">
             <div>
               <label class="text-sm font-medium text-[var(--muted-foreground)]">Transfer Route</label>
-              <div class="text-[var(--foreground)]">${request.source_system || 'Source'} → ${request.destination_system || request.destination_location || 'Destination'}</div>
+              <div class="text-[var(--foreground)]">${request.source_system || 'Source'} → ${request.dest_system || request.dest_location || 'Destination'}</div>
             </div>
             <div>
               <label class="text-sm font-medium text-[var(--muted-foreground)]">File Details</label>
-              <div class="text-[var(--foreground)]">${request.file_count || 'Unknown'} files (${request.total_size || 'Unknown size'})</div>
+              <div class="text-[var(--foreground)]">Size: ${request.data_size || 'Unknown size'}</div>
             </div>
           </div>
         </div>
@@ -308,7 +308,7 @@ export class DTATransferForm {
               <select name="smeUserId" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" ${!isActive ? 'disabled' : ''} required>
                 <option value="">Select SME...</option>
                 ${smeUsers.map(sme => `
-                  <option value="${sme.id}" ${request.sme_user_id === sme.id ? 'selected' : ''}>
+                  <option value="${sme.id}" ${request.assigned_sme_id === sme.id ? 'selected' : ''}>
                     ${sme.first_name} ${sme.last_name} (${sme.email})
                   </option>
                 `).join('')}

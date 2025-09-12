@@ -117,8 +117,7 @@ export class RequestorAllRequests {
         label: 'Actions',
         render: (value: any, row: any) => ComponentBuilder.tableCellActions([
           { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
-          { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' },
-          { label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' }
+          { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' }
         ])
       }
     ];
@@ -250,7 +249,6 @@ export class RequestorAllRequests {
                 </div>
                 <div class="flex gap-1">
                   <button onclick="viewRequest(${request.id})" class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">View</button>
-                  <button onclick="editRequest(${request.id})" class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Edit</button>
                 </div>
               </div>
 

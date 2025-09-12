@@ -121,11 +121,19 @@ export class AdminRequests {
       {
         key: 'actions',
         label: 'Actions',
-        render: (value: any, row: any) => ComponentBuilder.tableCellActions([
-          { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
-          { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' },
-          { label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' }
-        ])
+        render: (value: any, row: any) => {
+          const actions: { label: string; onClick: string; variant: 'secondary' | 'destructive'; }[] = [
+            { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
+            { label: 'Timeline', onClick: `viewTimeline(${row.id})`, variant: 'secondary' },
+            { label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' }
+          ];
+
+          if (row.status !== 'completed') {
+            actions.push({ label: 'Delete', onClick: `deleteRequest(${row.id})`, variant: 'destructive' });
+          }
+
+          return ComponentBuilder.tableCellActions(actions);
+        }
       }
     ];
 
@@ -442,6 +450,23 @@ export class AdminRequests {
       function editRequest(requestId) {
         // Navigate to request edit page (to be implemented)
         alert('Request editing not yet implemented. This would edit request ID: ' + requestId);
+      }
+      
+      function deleteRequest(requestId) {
+        if (confirm('Are you sure you want to permanently delete this request? This action cannot be undone.')) {
+          fetch('/api/admin/requests/' + requestId, { method: 'DELETE' })
+            .then(response => response.json())
+            .then(result => {
+              alert(result.message);
+              if (result.success) {
+                window.location.reload();
+              }
+            })
+            .catch(error => {
+              console.error('Failed to delete request:', error);
+              alert('An unexpected error occurred while deleting the request.');
+            });
+        }
       }
       
       function switchView(viewType) {

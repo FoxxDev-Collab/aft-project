@@ -75,87 +75,51 @@ export class AdminSecurity {
       
       ${ComponentBuilder.sectionHeader({
         title: 'Security Settings',
-        description: 'Configure system security policies and parameters'
+        description: 'Configure system security policies and parameters',
+        actions: ComponentBuilder.primaryButton({ 
+          children: 'Save All Settings', 
+          onClick: 'saveAllSecuritySettings()', 
+          size: 'sm' 
+        })
       })}
       
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Password Policy -->
         <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
           <h3 class="text-lg font-semibold mb-4">Password Policy</h3>
           <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Minimum Length</span>
-              <span class="text-sm font-mono">12 characters</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Password History</span>
-              <span class="text-sm font-mono">12 passwords</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Max Age</span>
-              <span class="text-sm font-mono">90 days</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Complexity Required</span>
-              <span class="text-sm font-mono text-[var(--success)]">Yes</span>
-            </div>
+            ${this.renderSettingInput('password.minLength', 'Minimum Length', '12', 'number', 'characters')}
+            ${this.renderSettingInput('password.history', 'Password History', '12', 'number', 'passwords')}
+            ${this.renderSettingInput('password.maxAge', 'Max Age', '90', 'number', 'days')}
+            ${this.renderSettingSelect('password.complexity', 'Complexity Required', 'true', [{value: 'true', label: 'Yes'}, {value: 'false', label: 'No'}])}
           </div>
         </div>
         
+        <!-- Session Security -->
         <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
           <h3 class="text-lg font-semibold mb-4">Session Security</h3>
           <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Session Timeout</span>
-              <span class="text-sm font-mono">30 minutes</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Max Session Duration</span>
-              <span class="text-sm font-mono">8 hours</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Secure Cookies</span>
-              <span class="text-sm font-mono text-[var(--success)]">Enabled</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">HTTPS Required</span>
-              <span class="text-sm font-mono text-[var(--success)]">Yes</span>
-            </div>
+            ${this.renderSettingInput('session.timeout', 'Session Timeout', '30', 'number', 'minutes')}
+            ${this.renderSettingInput('session.maxDuration', 'Max Session Duration', '8', 'number', 'hours')}
+            ${this.renderSettingSelect('session.secureCookie', 'Secure Cookies', 'true', [{value: 'true', label: 'Enabled'}, {value: 'false', label: 'Disabled'}])}
           </div>
         </div>
         
+        <!-- Rate Limiting -->
         <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
           <h3 class="text-lg font-semibold mb-4">Rate Limiting</h3>
           <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Max Login Attempts</span>
-              <span class="text-sm font-mono">5 attempts</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Lockout Duration</span>
-              <span class="text-sm font-mono">15 minutes</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">Status</span>
-              <span class="text-sm font-mono text-[var(--success)]">Active</span>
-            </div>
+            ${this.renderSettingInput('ratelimit.login.maxAttempts', 'Max Login Attempts', '5', 'number', 'attempts')}
+            ${this.renderSettingInput('ratelimit.login.lockoutMinutes', 'Lockout Duration', '15', 'number', 'minutes')}
           </div>
         </div>
-        
+
+        <!-- Security Headers -->
         <div class="bg-[var(--card)] p-6 rounded-lg border border-[var(--border)]">
           <h3 class="text-lg font-semibold mb-4">Security Headers</h3>
           <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <span class="text-sm">HSTS</span>
-              <span class="text-sm font-mono text-[var(--success)]">Enabled</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">CSP</span>
-              <span class="text-sm font-mono text-[var(--success)]">Enabled</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm">X-Frame-Options</span>
-              <span class="text-sm font-mono text-[var(--success)]">DENY</span>
-            </div>
+            ${this.renderSettingSelect('headers.hsts', 'HSTS Enabled', 'true', [{value: 'true', label: 'Enabled'}, {value: 'false', label: 'Disabled'}])}
+            ${this.renderSettingSelect('headers.csp', 'CSP Enabled', 'true', [{value: 'true', label: 'Enabled'}, {value: 'false', label: 'Disabled'}])}
           </div>
         </div>
       </div>
@@ -168,6 +132,77 @@ export class AdminSecurity {
       '/admin/security/settings',
       content
     );
+  }
+
+  private static renderSettingInput(id: string, label: string, defaultValue: string, type: string, unit: string): string {
+    return `
+      <div class="flex justify-between items-center">
+        <label for="${id}" class="text-sm">${label}</label>
+        <div class="flex items-center gap-2">
+          <input id="${id}" type="${type}" value="${defaultValue}" class="w-24 text-right font-mono bg-[var(--background)] border border-[var(--border)] rounded-md px-2 py-1">
+          <span class="text-sm text-[var(--muted-foreground)]">${unit}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  private static renderSettingSelect(id: string, label: string, defaultValue: string, options: {value: string, label: string}[]): string {
+    return `
+      <div class="flex justify-between items-center">
+        <label for="${id}" class="text-sm">${label}</label>
+        <select id="${id}" class="font-mono bg-[var(--background)] border border-[var(--border)] rounded-md px-2 py-1">
+          ${options.map(opt => `<option value="${opt.value}" ${opt.value === defaultValue ? 'selected' : ''}>${opt.label}</option>`).join('')}
+        </select>
+      </div>
+    `;
+  }
+
+  static getSecuritySettingsScript(): string {
+    return `
+      document.addEventListener('DOMContentLoaded', function() {
+        loadSecuritySettings();
+      });
+
+      function loadSecuritySettings() {
+        fetch('/api/admin/security-settings')
+          .then(response => response.json())
+          .then(settings => {
+            for (const key in settings) {
+              const input = document.getElementById(key);
+              if (input) {
+                input.value = settings[key];
+              }
+            }
+          })
+          .catch(error => {
+            console.error('Error loading security settings:', error);
+            alert('Failed to load security settings.');
+          });
+      }
+
+      function saveAllSecuritySettings() {
+        const settings = {};
+        const inputs = document.querySelectorAll('input[id^="password."], select[id^="password."], input[id^="session."], select[id^="session."], input[id^="ratelimit."], select[id^="ratelimit."], input[id^="headers."], select[id^="headers."]');
+        
+        inputs.forEach(input => {
+          settings[input.id] = input.value;
+        });
+
+        fetch('/api/admin/security-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        })
+        .then(response => response.json())
+        .then(result => {
+          alert(result.message);
+        })
+        .catch(error => {
+          console.error('Error saving security settings:', error);
+          alert('An error occurred while saving settings.');
+        });
+      }
+    `;
   }
 
   static getAuditLogScript(): string {

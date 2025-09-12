@@ -995,7 +995,9 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
 
     // Handle transfer completion
     if (formData.filesTransferred && !saveOnly) {
-      const canTransfer = request.origination_scan_status === 'clean' && request.destination_scan_status === 'clean';
+      // Re-fetch the request after potential scan updates to ensure we have the latest statuses
+      const latestRequest = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
+      const canTransfer = latestRequest.origination_scan_status === 'clean' && latestRequest.destination_scan_status === 'clean';
       if (!canTransfer) {
         return new Response(JSON.stringify({ error: 'Both scans must be clean before completing transfer' }), {
           status: 400,

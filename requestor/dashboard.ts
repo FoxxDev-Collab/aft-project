@@ -37,22 +37,6 @@ export class RequestorDashboard {
       status: { label: 'Total Requests', value: myRequests?.count?.toString() || '0', status: 'operational' }
     });
 
-    const pendingCard = Templates.adminCard({
-      title: 'Pending Reviews',
-      description: 'Requests awaiting approval or processing',
-      primaryAction: { label: 'View Pending', onClick: 'viewPendingRequests()' },
-      secondaryAction: { label: 'Get Updates', onClick: 'checkUpdates()' },
-      status: { label: 'Pending', value: pendingRequests?.count?.toString() || '0', status: pendingRequests?.count > 0 ? 'warning' : 'operational' }
-    });
-
-    const helpCard = Templates.adminCard({
-      title: 'Help & Support',
-      description: 'Get assistance with your requests',
-      primaryAction: { label: 'Help Center', onClick: 'window.location.href=\'/requestor/help\'' },
-      secondaryAction: { label: 'Contact Support', onClick: 'contactSupport()' },
-      status: { label: 'Support', value: 'Available', status: 'operational' }
-    });
-
     // Build recent requests table
     const recentRequestsTable = this.buildRecentRequestsTable(recentRequests);
 
@@ -75,7 +59,7 @@ export class RequestorDashboard {
           cols: 2,
           gap: 'lg',
           responsive: true,
-          children: [newRequestCard, myRequestsCard, pendingCard, helpCard].join('')
+          children: [newRequestCard, myRequestsCard].join('')
         })}
         
         <div>
@@ -156,6 +140,7 @@ export class RequestorDashboard {
             'pending_cpso': 'warning',
             'approved': 'success',
             'rejected': 'error',
+            'needs_revision': 'error',
             'completed': 'success',
             'cancelled': 'default'
           } as const;
@@ -178,10 +163,17 @@ export class RequestorDashboard {
       {
         key: 'actions',
         label: 'Actions',
-        render: (value: any, row: any) => ComponentBuilder.tableCellActions([
-          { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' },
-          { label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' }
-        ])
+        render: (value: any, row: any) => {
+          const actions = [
+            { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' as const }
+          ];
+
+          if (row.status === 'rejected' || row.status === 'needs_revision') {
+            actions.push({ label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' as const });
+          }
+
+          return ComponentBuilder.tableCellActions(actions);
+        }
       }
     ];
 

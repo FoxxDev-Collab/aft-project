@@ -1,5 +1,4 @@
-// DTA Active Transfers - Simplified Section 4 Workflow
-import { ComponentBuilder } from "../lib/component-builder";
+// DTA Active Transfers - Enhanced Professional UI
 import { DTANavigation, type DTAUser } from "./dta-nav";
 import { getDb } from "../lib/database-bun";
 
@@ -29,8 +28,9 @@ export class DTAActiveTransfers {
             <p class="text-muted-foreground">Record AV scan results, perform transfers, and complete DTA signature workflow</p>
           </div>
           
-          ${this.buildActiveTransfersTable(activeTransfers)}
+          ${DTAActiveTransfers.buildActiveTransfersTable(activeTransfers)}
         </div>
+        ${DTAActiveTransfers.buildScanModal()}
       </div>
     `;
 
@@ -54,7 +54,7 @@ export class DTAActiveTransfers {
       `;
     }
 
-    // Transform transfers data for simplified table
+    // Transform transfers data for enhanced table
     const tableData = transfers.map(transfer => ({
       id: transfer.id,
       request_number: transfer.request_number,
@@ -70,15 +70,15 @@ export class DTAActiveTransfers {
       dta_signature: transfer.dta_signature_date ? true : false
     }));
 
-    // Simplified table columns per requirements
+    // Enhanced table columns with professional styling
     const columns = [
       {
         key: 'request_number',
-        label: 'Request',
+        label: 'Request Details',
         render: (value: any, row: any) => `
-          <div>
-            <div class="font-medium">${row.request_number}</div>
-            <div class="text-xs text-muted-foreground">${row.requestor_name}</div>
+          <div class="flex flex-col space-y-1">
+            <div class="font-semibold text-sm text-[var(--foreground)]">${row.request_number}</div>
+            <div class="text-xs text-[var(--muted-foreground)]">${row.requestor_name}</div>
           </div>
         `
       },
@@ -86,103 +86,160 @@ export class DTAActiveTransfers {
         key: 'systems',
         label: 'Transfer Route',
         render: (value: any, row: any) => `
-          <div class="text-sm">${row.source_system || 'Source'} → ${row.source_location || 'Destination'}</div>
-          <div class="text-xs text-muted-foreground">${row.classification}</div>
+          <div class="flex flex-col space-y-1">
+            <div class="text-sm font-medium">${row.source_system || 'Source'} → ${row.source_location || 'Destination'}</div>
+            <div class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[var(--accent)] text-[var(--accent-foreground)]">
+              ${row.classification}
+            </div>
+          </div>
         `
       },
       {
         key: 'av_scan_workflow',
-        label: 'AV Scan Workflow',
+        label: 'AV Scan Status',
         render: (value: any, row: any) => {
           return `
-            <div class="space-y-2">
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <div class="flex items-center gap-1">
-                  <span class="${row.origination_scan_status === 'clean' ? 'status-value operational' : row.origination_scan_status === 'infected' ? 'status-value attention' : 'status-value'}">
-                    ${row.origination_scan_status === 'clean' ? '✓' : row.origination_scan_status === 'infected' ? '✗' : '○'}
+            <div class="space-y-3">
+              <div class="grid grid-cols-1 gap-2">
+                <div class="flex items-center justify-between p-2 rounded-md border border-[var(--border)] bg-[var(--card)]">
+                  <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-1">
+                      <span class="w-3 h-3 rounded-full ${row.origination_scan_status === 'clean' ? 'bg-green-500' : row.origination_scan_status === 'infected' ? 'bg-red-500' : 'bg-gray-400'}"></span>
+                      <span class="text-xs font-medium">Origin</span>
+                    </div>
+                    ${row.origination_files_scanned ? `<span class="text-xs text-[var(--muted-foreground)]">${row.origination_files_scanned} files</span>` : ''}
+                  </div>
+                  <span class="text-xs font-semibold ${row.origination_scan_status === 'clean' ? 'text-green-600' : row.origination_scan_status === 'infected' ? 'text-red-600' : 'text-gray-500'}">
+                    ${row.origination_scan_status === 'clean' ? 'CLEAN' : row.origination_scan_status === 'infected' ? 'INFECTED' : 'PENDING'}
                   </span>
-                  <span>Origin${row.origination_files_scanned ? ` (${row.origination_files_scanned})` : ''}</span>
                 </div>
-                <div class="flex items-center gap-1">
-                  <span class="${row.destination_scan_status === 'clean' ? 'status-value operational' : row.destination_scan_status === 'infected' ? 'status-value attention' : 'status-value'}">
-                    ${row.destination_scan_status === 'clean' ? '✓' : row.destination_scan_status === 'infected' ? '✗' : '○'}
+                
+                <div class="flex items-center justify-between p-2 rounded-md border border-[var(--border)] bg-[var(--card)]">
+                  <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-1">
+                      <span class="w-3 h-3 rounded-full ${row.destination_scan_status === 'clean' ? 'bg-green-500' : row.destination_scan_status === 'infected' ? 'bg-red-500' : 'bg-gray-400'}"></span>
+                      <span class="text-xs font-medium">Destination</span>
+                    </div>
+                    ${row.destination_files_scanned ? `<span class="text-xs text-[var(--muted-foreground)]">${row.destination_files_scanned} files</span>` : ''}
+                  </div>
+                  <span class="text-xs font-semibold ${row.destination_scan_status === 'clean' ? 'text-green-600' : row.destination_scan_status === 'infected' ? 'text-red-600' : 'text-gray-500'}">
+                    ${row.destination_scan_status === 'clean' ? 'CLEAN' : row.destination_scan_status === 'infected' ? 'INFECTED' : 'PENDING'}
                   </span>
-                  <span>Dest${row.destination_files_scanned ? ` (${row.destination_files_scanned})` : ''}</span>
                 </div>
               </div>
-              <div class="flex gap-1">
-                <input type="number" 
-                       placeholder="Files" 
-                       class="w-16 text-xs form-input-enhanced"
-                       data-files-count="${row.id}"
-                       min="0">
-                <select class="flex-1 text-xs form-input-enhanced" 
-                        onchange="updateScanStatus(${row.id}, this.value)" 
-                        data-request-id="${row.id}">
-                  <option value="">Select AV Scan Result...</option>
-                  <option value="record-origin-clean">Origin Media - Clean</option>
-                  <option value="record-origin-infected">Origin Media - Infected</option>
-                  <option value="record-destination-clean">Destination Media - Clean</option>
-                  <option value="record-destination-infected">Destination Media - Infected</option>
-                </select>
-              </div>
+              
+              <button class="w-full px-3 py-2 text-xs font-medium rounded-md border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] transition-colors duration-200 flex items-center justify-center space-x-1" 
+                      onclick="openScanModal(${row.id}, '${row.request_number}')">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <span>Record Scan</span>
+              </button>
             </div>
           `;
         }
       },
       {
         key: 'transfer_workflow',
-        label: 'Transfer Workflow',
+        label: 'Transfer Actions',
         render: (value: any, row: any) => {
           const canTransfer = row.origination_scan_status === 'clean' && row.destination_scan_status === 'clean';
           const transferComplete = row.transfer_completed;
           const dtaSigned = row.dta_signature;
           
           if (dtaSigned) {
-            return `<div class="text-xs status-value operational">✓ Signed - Awaiting SME</div>`;
+            return `
+              <div class="flex flex-col space-y-2">
+                <div class="flex items-center space-x-2 p-2 rounded-md bg-green-50 border border-green-200">
+                  <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path>
+                  </svg>
+                  <span class="text-xs font-medium text-green-800">DTA Signed</span>
+                </div>
+                <div class="text-xs text-[var(--muted-foreground)] text-center">Awaiting SME Review</div>
+              </div>
+            `;
           } else {
             return `
-              <button class="action-btn primary w-full text-xs" 
-                      onclick="window.location.href='/dta/transfer/${row.id}'">
-                Manage Transfer
-              </button>
+              <div class="flex flex-col space-y-2">
+                <div class="flex flex-col space-y-1">
+                  <div class="text-xs text-[var(--muted-foreground)] mb-1">
+                    Status: ${transferComplete ? 'Transfer Complete' : canTransfer ? 'Ready for Transfer' : 'Awaiting Clean Scans'}
+                  </div>
+                  
+                  ${!canTransfer ? `
+                    <div class="p-2 rounded-md bg-yellow-50 border border-yellow-200">
+                      <div class="flex items-center space-x-1">
+                        <svg class="w-3 h-3 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                        <span class="text-xs font-medium text-yellow-800">Waiting for clean AV scans</span>
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+                
+                <button class="w-full px-3 py-2 text-xs font-medium rounded-md ${canTransfer ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'} transition-colors duration-200 flex items-center justify-center space-x-1" 
+                        onclick="window.location.href='/dta/transfer/${row.id}'"
+                        ${!canTransfer ? 'disabled' : ''}>
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                  </svg>
+                  <span>Manage Transfer</span>
+                </button>
+              </div>
             `;
           }
         }
       }
     ];
 
-    // Create simplified table
-    const table = this.buildSimpleTable(columns, tableData);
+    // Create enhanced professional table
+    const table = this.buildProfessionalTable(columns, tableData);
 
     return `
-      <div class="action-panel">
-        ${table}
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-sm">
+        <div class="px-6 py-4 border-b border-[var(--border)]">
+          <h2 class="text-lg font-semibold text-[var(--foreground)]">Active Transfer Queue</h2>
+          <p class="text-sm text-[var(--muted-foreground)]">${tableData.length} transfer${tableData.length !== 1 ? 's' : ''} requiring attention</p>
+        </div>
+        <div class="overflow-hidden">
+          ${table}
+        </div>
       </div>
     `;
   }
 
-  private static buildSimpleTable(columns: any[], data: any[]): string {
+  private static buildProfessionalTable(columns: any[], data: any[]): string {
     if (data.length === 0) {
-      return `<div class="text-center p-8">No active transfers found</div>`;
+      return `
+        <div class="text-center py-12">
+          <div class="text-4xl mb-4">📋</div>
+          <h3 class="text-lg font-medium mb-2">No Active Transfers</h3>
+          <p class="text-[var(--muted-foreground)]">All transfers have been completed or are awaiting approval.</p>
+        </div>
+      `;
     }
 
-    const headerRow = columns.map(col => `<th class="p-3 text-left font-medium">${col.label}</th>`).join('');
-    const dataRows = data.map(row => {
+    const headerRow = columns.map(col => 
+      `<th class="px-6 py-4 text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wider border-b border-[var(--border)]">${col.label}</th>`
+    ).join('');
+    
+    const dataRows = data.map((row, index) => {
       const cells = columns.map(col => {
         const value = col.render ? col.render(row[col.key], row) : row[col.key];
-        return `<td class="p-3">${value}</td>`;
+        return `<td class="px-6 py-4 border-b border-[var(--border)] align-top">${value}</td>`;
       }).join('');
-      return `<tr class="border-t">${cells}</tr>`;
+      return `<tr class="hover:bg-[var(--accent)]/50 transition-colors duration-150">${cells}</tr>`;
     }).join('');
 
     return `
       <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead class="bg-muted">
+        <table class="min-w-full divide-y divide-[var(--border)]">
+          <thead class="bg-[var(--muted)]/30">
             <tr>${headerRow}</tr>
           </thead>
-          <tbody>
+          <tbody class="bg-[var(--card)] divide-y divide-[var(--border)]">
             ${dataRows}
           </tbody>
         </table>
@@ -190,156 +247,123 @@ export class DTAActiveTransfers {
     `;
   }
 
+  private static buildScanModal(): string {
+    return `
+      <div id="scanModal" class="fixed inset-0 bg-black/50 items-center justify-center z-50" style="display:none;">
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-xl w-full max-w-md mx-4">
+          <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+            <h2 class="text-lg font-semibold">Record AV Scan Results</h2>
+            <button aria-label="Close" class="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-xl leading-none" onclick="closeScanModal()">&times;</button>
+          </div>
+          <div class="p-6">
+            <form id="scanForm" onsubmit="submitScanForm(event)">
+              <input type="hidden" id="scanRequestId" name="requestId">
+              <div class="mb-4 p-3 rounded-md bg-[var(--accent)]/10 border border-[var(--border)]">
+                <p class="text-sm text-[var(--foreground)]">Request: <strong id="scanRequestNumber" class="font-semibold"></strong></p>
+              </div>
+              
+              <div class="space-y-4">
+                <div>
+                  <label for="scanType" class="block text-sm font-medium mb-2">Media Type</label>
+                  <select id="scanType" name="scanType" class="form-input-enhanced w-full px-3 py-2 border border-[var(--border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                    <option value="">Select Media...</option>
+                    <option value="origination">Origin Media</option>
+                    <option value="destination">Destination Media</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="scanResult" class="block text-sm font-medium mb-2">AV Scan Result</label>
+                  <select id="scanResult" name="scanResult" class="form-input-enhanced w-full px-3 py-2 border border-[var(--border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                    <option value="">Select Result...</option>
+                    <option value="clean">Clean</option>
+                    <option value="infected">Infected</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="filesScanned" class="block text-sm font-medium mb-2">Number of Files Scanned</label>
+                  <input type="number" id="filesScanned" name="filesScanned" class="form-input-enhanced w-full px-3 py-2 border border-[var(--border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" min="0" required>
+                </div>
+              </div>
+              
+              <div class="mt-6 flex justify-end gap-3">
+                <button type="button" class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--background)] border border-[var(--border)] rounded-md hover:bg-[var(--accent)] transition-colors duration-200" onclick="closeScanModal()">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 transition-colors duration-200">Submit Scan</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   static getScript(): string {
     return `
-      function updateScanStatus(requestId, action) {
-        if (!action) return;
-        
-        const [operation, media, result] = action.split('-');
-        
-        if (operation !== 'record' || !media || !result) {
-          alert('Invalid scan action selected');
-          return;
+      function openScanModal(requestId, requestNumber) {
+        document.getElementById('scanRequestId').value = requestId;
+        document.getElementById('scanRequestNumber').textContent = requestNumber;
+        const modal = document.getElementById('scanModal');
+        modal.style.display = 'flex';
+        // Close on outside click
+        modal.addEventListener('click', function onBackdrop(e) {
+          if (e.target === modal) { closeScanModal(); modal.removeEventListener('click', onBackdrop); }
+        });
+      }
+
+      function closeScanModal() {
+        const modal = document.getElementById('scanModal');
+        modal.style.display = 'none';
+        document.getElementById('scanForm').reset();
+      }
+
+      function submitScanForm(event) {
+        event.preventDefault();
+        const form = event.target;
+        const requestId = form.requestId.value;
+        const scanType = form.scanType.value;
+        const scanResult = form.scanResult.value;
+        const filesScanned = parseInt(form.filesScanned.value);
+
+        if (isNaN(filesScanned) || filesScanned < 0) {
+            alert('Please enter a valid number of files scanned');
+            return;
         }
-        
-        const scanType = media; // 'origin' or 'destination'
-        const scanResult = result; // 'clean' or 'infected'
-        
-        // Get the files count from the input field
-        const filesInput = document.querySelector(\`input[data-files-count="\${requestId}"]\`);
-        const filesScanned = filesInput ? parseInt(filesInput.value) || 0 : 0;
-        
-        if (filesScanned === 0) {
-          alert('Please enter the number of files scanned');
-          const select = document.querySelector(\`select[data-request-id="\${requestId}"]\`);
-          if (select) select.value = '';
-          return;
-        }
-        
+
         if (confirm(\`Record \${scanType} media scan as \${scanResult.toUpperCase()} with \${filesScanned} files scanned?\`)) {
-          fetch(\`/api/dta/requests/\${requestId}/scan\`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              scanType: scanType === 'origin' ? 'origination' : 'destination',
-              result: scanResult,
-              filesScanned: filesScanned,
-              notes: \`\${scanType.charAt(0).toUpperCase() + scanType.slice(1)} media AV scan: \${scanResult} (\${filesScanned} files scanned)\`
-            })
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              alert(\`\${scanType.charAt(0).toUpperCase() + scanType.slice(1)} scan recorded as \${scanResult}!\`);
-              window.location.reload();
-            } else {
-              alert('Failed to record scan: ' + data.error);
-            }
-          })
-          .catch(error => {
-            console.error('Error recording scan:', error);
-            alert('Failed to record scan. Please try again.');
-          });
-        }
-        
-        // Reset dropdown and files input
-        const select = document.querySelector(\`select[data-request-id="\${requestId}"]\`);
-        if (select) select.value = '';
-        if (filesInput) filesInput.value = '';
-      }
-      
-      function performTransfer(requestId) {
-        const filesTransferred = prompt('Enter the number of files transferred:');
-        if (!filesTransferred || isNaN(parseInt(filesTransferred))) {
-          alert('Please enter a valid number of files transferred');
-          return;
-        }
-        
-        if (confirm(\`Perform the file transfer with \${filesTransferred} files? This will mark the transfer as complete and ready for DTA signature.\`)) {
-          fetch(\`/api/dta/requests/\${requestId}/complete\`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              filesTransferred: parseInt(filesTransferred),
-              notes: \`Transfer completed by DTA per Section 4 procedures. \${filesTransferred} files transferred.\`
-            })
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              alert('Transfer completed successfully! Ready for DTA signature.');
-              window.location.reload();
-            } else {
-              alert('Failed to complete transfer: ' + data.error);
-            }
-          })
-          .catch(error => {
-            console.error('Error completing transfer:', error);
-            alert('Failed to complete transfer. Please try again.');
-          });
-        }
-      }
-      
-      async function signTransfer(requestId) {
-        // First fetch available SME users
-        try {
-          const smeResponse = await fetch('/api/dta/sme-users');
-          const smeData = await smeResponse.json();
-          
-          if (!smeData.success || !smeData.users || smeData.users.length === 0) {
-            alert('No SME users available. Please contact an administrator.');
-            return;
-          }
-          
-          // Create a selection dialog
-          let smeOptions = 'Available SME Users:\\n\\n';
-          smeData.users.forEach((user, index) => {
-            smeOptions += \`\${index + 1}. \${user.name} (\${user.email})\\n\`;
-          });
-          smeOptions += '\\nEnter the number of the SME to assign:';
-          
-          const selection = prompt(smeOptions);
-          if (!selection || isNaN(parseInt(selection))) {
-            alert('Please select a valid SME');
-            return;
-          }
-          
-          const selectedIndex = parseInt(selection) - 1;
-          if (selectedIndex < 0 || selectedIndex >= smeData.users.length) {
-            alert('Invalid selection');
-            return;
-          }
-          
-          const selectedSME = smeData.users[selectedIndex];
-          
-          if (confirm(\`Sign this transfer and assign to SME \${selectedSME.name}? This will move the request to SME signature for Two-Person Integrity verification.\`)) {
-            fetch(\`/api/dta/requests/\${requestId}/sign\`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                smeUserId: selectedSME.id,
-                notes: \`DTA signature completed per Section 4 requirements. Assigned to SME: \${selectedSME.name}\`
-              })
+            fetch(\`/api/dta/requests/\${requestId}/scan\`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scanType: scanType,
+                    result: scanResult,
+                    filesScanned: filesScanned,
+                    notes: \`\${scanType.charAt(0).toUpperCase() + scanType.slice(1)} media AV scan: \${scanResult} (\${filesScanned} files scanned)\`
+                })
             })
             .then(response => response.json())
             .then(data => {
-              if (data.success) {
-                alert('DTA signature recorded! Request moved to SME for Two-Person Integrity verification.');
-                window.location.reload();
-              } else {
-                alert('Failed to record DTA signature: ' + data.error);
-              }
+                if (data.success) {
+                    alert(\`\${scanType.charAt(0).toUpperCase() + scanType.slice(1)} scan recorded as \${scanResult}!\`);
+                    window.location.reload();
+                } else {
+                    alert('Failed to record scan: ' + data.error);
+                }
             })
             .catch(error => {
-              console.error('Error recording DTA signature:', error);
-              alert('Failed to record DTA signature. Please try again.');
+                console.error('Error recording scan:', error);
+                alert('Failed to record scan. Please try again.');
             });
-          }
-        } catch (error) {
-          console.error('Error fetching SME users:', error);
-          alert('Failed to fetch SME users. Please try again.');
         }
       }
+      
+      // Accessibility: close on Escape
+      document.addEventListener('keydown', function(e) { 
+        if (e.key === 'Escape') { 
+          const m = document.getElementById('scanModal'); 
+          if (m && m.style.display !== 'none') closeScanModal(); 
+        } 
+      });
     `;
   }
 }

@@ -355,6 +355,15 @@ function createTables() {
       created_at INTEGER DEFAULT (unixepoch())
     )
   `);
+
+  // System Settings table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )
+  `);
 }
 
 // Hash password using Bun's built-in crypto
@@ -365,206 +374,52 @@ async function hashPassword(password: string): Promise<string> {
   });
 }
 
-// Verify password
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return await Bun.password.verify(password, hash);
 }
 
-// Initialize database with default users and drives
+// Initialize database with default admin user
 async function initializeDatabase() {
   try {
-    // Check if admin user exists
-    const adminCheck = db.query("SELECT id FROM users WHERE primary_role = ? LIMIT 1").get(UserRole.ADMIN);
+    // Check if admin user already exists
+    const adminCheck = db.query("SELECT id FROM users WHERE email = 'admin@aft.gov'").get() as { id: number } | undefined;
     
     if (!adminCheck) {
-      // Create default admin user
-      const adminPassword = await hashPassword("admin123");
+      // Create admin user
+      const adminPassword = 'admin123'; // Default password, should be changed on first login
+      const hashedPassword = await hashPassword(adminPassword);
       
-      db.query(`
-        INSERT INTO users (email, password, first_name, last_name, primary_role, organization, phone)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run("admin@aft.gov", adminPassword, "System", "Administrator", UserRole.ADMIN, "AFT System", "555-0000");
+      // Insert admin user
+      const adminStmt = db.prepare(`
+        INSERT INTO users (email, password, first_name, last_name, primary_role, is_active, organization, phone)
+        VALUES (?, ?, ?, ?, ?, 1, 'System', 'N/A')
+      `);
       
-      console.log("✓ Default admin user created: admin@aft.gov");
-    }
-
-    // Create test users with multiple roles
-    const testUsers = [
-      { 
-        email: 'dao@aft.gov', 
-        primaryRole: UserRole.DAO, 
-        additionalRoles: [UserRole.REQUESTOR],
-        name: 'David Anderson', 
-        title: 'Designated Authorizing Official' 
-      },
-      { 
-        email: 'issm@aft.gov', 
-        primaryRole: UserRole.APPROVER, 
-        additionalRoles: [UserRole.REQUESTOR],
-        name: 'Jane Smith', 
-        title: 'Information System Security Manager' 
-      },
-      { 
-        email: 'cpso@aft.gov', 
-        primaryRole: UserRole.CPSO, 
-        additionalRoles: [UserRole.REQUESTOR],
-        name: 'Robert Taylor', 
-        title: 'Contractor Program Security Officer' 
-      },
-      {
-        email: 'requestor@aft.gov', 
-        primaryRole: UserRole.REQUESTOR, 
-        additionalRoles: [],
-        name: 'Emily Clark', 
-        title: 'Request Submitter'
-      },
-      { 
-        email: 'dta@aft.gov', 
-        primaryRole: UserRole.DTA, 
-        additionalRoles: [UserRole.REQUESTOR, UserRole.SME],
-        name: 'Mike Johnson', 
-        title: 'Data Transfer Agent' 
-      },
-      { 
-        email: 'dta2@aft.gov', 
-        primaryRole: UserRole.DTA, 
-        additionalRoles: [UserRole.REQUESTOR],
-        name: 'Lisa Brown', 
-        title: 'Data Transfer Agent 2' 
-      },
-      { 
-        email: 'sme@aft.gov', 
-        primaryRole: UserRole.SME, 
-        additionalRoles: [UserRole.REQUESTOR],
-        name: 'Jennifer Davis', 
-        title: 'Subject Matter Expert' 
-      },
-      { 
-        email: 'custodian@aft.gov', 
-        primaryRole: UserRole.MEDIA_CUSTODIAN, 
-        additionalRoles: [UserRole.REQUESTOR],
-        name: 'Sarah Wilson', 
-        title: 'Media Custodian' 
-      },
-      {
-        email: 'admin@aft.gov',
-        primaryRole: UserRole.ADMIN,
-        additionalRoles: [UserRole.REQUESTOR, UserRole.DAO, UserRole.APPROVER],
-        name: 'System Administrator',
-        title: 'System Administrator'
-      }
-    ];
-
-    const testPassword = await hashPassword("password123");
-
-    for (const testUser of testUsers) {
-      const userCheck = db.query("SELECT id FROM users WHERE email = ? LIMIT 1").get(testUser.email) as any;
+      const result = adminStmt.run(
+        'admin@aft.gov',
+        hashedPassword,
+        'System',
+        'Administrator',
+        UserRole.ADMIN
+      ) as any;
       
-      if (!userCheck) {
-        const nameParts = testUser.name.split(' ');
-        const firstName = nameParts[0] || 'Unknown';
-        const lastName = nameParts.slice(1).join(' ') || 'User';
-        
-        // Insert user
-        const result = db.query(`
-          INSERT INTO users (email, password, first_name, last_name, primary_role, organization, phone)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          RETURNING id
-        `).get(testUser.email, testPassword, firstName, lastName, testUser.primaryRole, "AFT System", "555-0000") as any;
-        
-        const userId = result.id;
-        
-        // Insert primary role
-        db.query(`
-          INSERT INTO user_roles (user_id, role, is_active, assigned_by)
-          VALUES (?, ?, 1, ?)
-        `).run(userId, testUser.primaryRole, 1); // Admin assigned initial roles
-        
-        // Insert additional roles
-        for (const role of testUser.additionalRoles) {
-          db.query(`
-            INSERT INTO user_roles (user_id, role, is_active, assigned_by)
-            VALUES (?, ?, 1, ?)
-          `).run(userId, role, 1);
-        }
-        
-        console.log(`✓ Test ${testUser.title} user created: ${testUser.email} (Roles: ${[testUser.primaryRole, ...testUser.additionalRoles].join(', ')})`);
-      }
+      const adminId = result.lastInsertRowid as number;
+      
+      // Add admin role
+      const roleStmt = db.prepare(`
+        INSERT INTO user_roles (user_id, role, is_active, assigned_by)
+        VALUES (?, ?, 1, ?)
+      `);
+      
+      roleStmt.run(adminId, UserRole.ADMIN, adminId);
+      
+      console.log('✓ Created default admin user');
+      console.log('  Email: admin@  aft.gov');
+      console.log('  Password: admin123');
     }
-
-
-    // Seed media drives for media custodian if empty
-    const mediaDriveCount = db.query("SELECT COUNT(*) as count FROM media_drives").get() as any;
-    
-    if (mediaDriveCount.count === 0) {
-      const testMediaDrives = [
-        {
-          serial_number: 'MD-SSD-001-2024',
-          media_control_number: 'MCN-001-2024',
-          type: 'SSD',
-          model: 'Samsung 980 PRO',
-          capacity: '1TB',
-          location: 'Secure Storage A-1',
-          status: 'available'
-        },
-        {
-          serial_number: 'MD-SSD-002-2024',
-          media_control_number: 'MCN-002-2024',
-          type: 'SSD',
-          model: 'Western Digital Black SN850X',
-          capacity: '2TB',
-          location: 'Secure Storage A-2',
-          status: 'available'
-        },
-        {
-          serial_number: 'MD-SSD-004-2024',
-          media_control_number: 'MCN-004-2024',
-          type: 'SSD-T',
-          model: 'Crucial MX4',
-          capacity: '500GB',
-          location: 'Secure Storage A-3',
-          status: 'available'
-        },
-        {
-          serial_number: 'MD-USB-005-2024',
-          media_control_number: 'MCN-005-2024',
-          type: 'USB',
-          model: 'Kingston DataTraveler',
-          capacity: '64GB',
-          location: 'Secure Storage C-1',
-          status: 'available'
-        },
-        {
-          serial_number: 'MD-DVD-006-2024',
-          media_control_number: 'MCN-006-2024',
-          type: 'DVD-R',
-          model: 'Verbatim DVD-R',
-          capacity: '4.7GB',
-          location: 'Secure Storage D-1',
-          status: 'maintenance'
-        }
-      ];
-
-      for (const drive of testMediaDrives) {
-        db.query(`
-          INSERT INTO media_drives (serial_number, media_control_number, type, model, capacity, location, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          drive.serial_number,
-          drive.media_control_number,
-          drive.type,
-          drive.model,
-          drive.capacity,
-          drive.location,
-          drive.status
-        );
-      }
-
-      console.log(`✓ Seeded ${testMediaDrives.length} drives in media drives inventory`);
-    }
-
   } catch (error) {
     console.error('Database initialization failed:', error);
+    throw error; // Re-throw to allow proper error handling upstream
   }
 }
 
@@ -584,11 +439,16 @@ export function getUserRoles(userId: number): Array<{ role: UserRoleType; isPrim
   if (!user) return [];
   
   // Get all active roles from user_roles table
-  const userRoles = db.query(`
+  let userRoles = db.query(`
     SELECT role FROM user_roles 
     WHERE user_id = ? AND is_active = 1
     ORDER BY created_at ASC
   `).all(userId) as Array<{ role: UserRoleType }>;
+  
+  // If user is a Media Custodian, remove the requestor role if it exists
+  if (user.primary_role === UserRole.MEDIA_CUSTODIAN) {
+    userRoles = userRoles.filter(ur => ur.role !== UserRole.REQUESTOR);
+  }
   
   // Map to include primary role flag
   const rolesWithFlags = userRoles.map(ur => ({
@@ -598,13 +458,46 @@ export function getUserRoles(userId: number): Array<{ role: UserRoleType; isPrim
   
   // Ensure primary role is included if not in user_roles table
   if (!rolesWithFlags.some(r => r.isPrimary)) {
-    rolesWithFlags.unshift({
-      role: user.primary_role,
-      isPrimary: true
-    });
+    // If primary role is requestor but user is a Media Custodian, don't add it
+    if (!(user.primary_role === UserRole.REQUESTOR && user.primary_role !== UserRole.MEDIA_CUSTODIAN)) {
+      rolesWithFlags.unshift({
+        role: user.primary_role,
+        isPrimary: true
+      });
+    }
   }
   
   return rolesWithFlags;
+}
+
+export async function backupDatabase(): Promise<string> {
+  const db = getDb();
+  const backupDir = './data/backups';
+
+  // Ensure backup directory exists
+  const fs = await import('node:fs');
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupFileName = `aft-backup-${timestamp}.db`;
+  const backupPath = `${backupDir}/${backupFileName}`;
+
+  // Use the built-in backup method
+  await (db as any).backup(backupPath);
+
+  return backupPath;
+}
+
+export function runMaintenance() {
+  const db = getDb();
+  
+  // Rebuild the database file, repacking it into a minimal amount of disk space.
+  db.exec("VACUUM;");
+  
+  // Gathers statistics about tables and indices for the query planner.
+  db.exec("ANALYZE;");
 }
 
 // Get role display information
@@ -635,6 +528,34 @@ export function getRoleDescription(role: UserRoleType): string {
     [UserRole.MEDIA_CUSTODIAN]: 'Physical media management and disposition'
   };
   return roleDescriptions[role] || 'Role-specific access';
+}
+
+// System Settings functions
+export function getSystemSettings(): Record<string, string> {
+  const db = getDb();
+  const settingsList = db.query("SELECT key, value FROM system_settings").all() as { key: string, value: string }[];
+  
+  return settingsList.reduce((acc, setting) => {
+    acc[setting.key] = setting.value;
+    return acc;
+  }, {} as Record<string, string>);
+}
+
+export function saveSystemSettings(settings: Record<string, string>) {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO system_settings (key, value, updated_at)
+    VALUES (?, ?, unixepoch())
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = unixepoch();
+  `);
+
+  db.transaction(() => {
+    for (const [key, value] of Object.entries(settings)) {
+      stmt.run(key, value);
+    }
+  })();
 }
 
 // Type definitions

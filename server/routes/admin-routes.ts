@@ -45,7 +45,8 @@ export async function handleAdminRoutes(request: Request, path: string, ipAddres
       const settingsHtml = await AdminSecurity.renderSecuritySettings(user);
       return new Response(createHtmlPage(
         "AFT - Security Settings",
-        settingsHtml
+        settingsHtml,
+        AdminSecurity.getSecuritySettingsScript()
       ), {
         headers: { "Content-Type": "text/html" }
       });

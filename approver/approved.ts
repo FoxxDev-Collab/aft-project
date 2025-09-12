@@ -80,7 +80,7 @@ export class ApprovedRequestsPage {
             'active_transfer': 'info',
             'pending_sme_signature': 'warning',
             'completed': 'success',
-            'cancelled': 'destructive',
+            'cancelled': 'error',
             'approved': 'success'
           } as const;
           const label = statusLabels[row.status as keyof typeof statusLabels] || row.status;

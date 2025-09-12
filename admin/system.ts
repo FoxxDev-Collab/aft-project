@@ -7,6 +7,8 @@ export class AdminSystem {
   static async renderSystemPage(user: AdminUser): Promise<string> {
     const systemInfo = {
       version: 'AFT v1.0.0',
+      buildDate: '2025-09-11',
+      author: 'Jeremiah Price',
       runtime: 'Bun ' + process.version || 'Unknown',
       platform: process.platform || 'Unknown',
       uptime: process.uptime ? Math.floor(process.uptime() / 60) + ' minutes' : 'Unknown',
@@ -69,20 +71,20 @@ export class AdminSystem {
                 <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.version}</div>
               </div>
               <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Build Date</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.buildDate}</div>
+              </div>
+              <div>
+                <div class="text-sm font-medium text-[var(--muted-foreground)]">Author</div>
+                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.author}</div>
+              </div>
+              <div>
                 <div class="text-sm font-medium text-[var(--muted-foreground)]">Runtime</div>
                 <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.runtime}</div>
               </div>
               <div>
-                <div class="text-sm font-medium text-[var(--muted-foreground)]">Platform</div>
-                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.platform}</div>
-              </div>
-              <div>
                 <div class="text-sm font-medium text-[var(--muted-foreground)]">Uptime</div>
                 <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.uptime}</div>
-              </div>
-              <div>
-                <div class="text-sm font-medium text-[var(--muted-foreground)]">Environment</div>
-                <div class="text-lg font-mono text-[var(--foreground)]">${systemInfo.nodeEnv}</div>
               </div>
             </div>
           </div>
@@ -153,151 +155,250 @@ export class AdminSystem {
   }
 
   static getScript(): string {
-    return `
-      function showDatabaseSettings() {
-        document.getElementById('modal-title').textContent = 'Database Settings';
-        document.getElementById('modal-content').innerHTML = \`
-          <div class="space-y-4">
-            <p class="text-[var(--muted-foreground)]">Database connection and maintenance settings.</p>
-            <div class="bg-[var(--muted)] p-4 rounded-md">
-              <h4 class="font-medium mb-2">Connection Status</h4>
-              <p class="text-sm text-[var(--success)]">✓ Connected to SQLite database</p>
-              <p class="text-xs text-[var(--muted-foreground)] mt-1">Database file: ./data/aft.db</p>
-            </div>
-            <div class="flex gap-3">
-              <button onclick="runDatabaseMaintenance()" class="px-4 py-2 bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-md hover:opacity-90">
-                Run Maintenance
-              </button>
-              <button onclick="backupDatabase()" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">
-                Backup Database
-              </button>
-            </div>
-          </div>
-        \`;
-        showSettingsModal();
-      }
-      
-      function showEmailSettings() {
-        document.getElementById('modal-title').textContent = 'Email Configuration';
-        document.getElementById('modal-content').innerHTML = \`
-          <div class="space-y-4">
-            <p class="text-[var(--muted-foreground)]">Configure SMTP settings for system notifications.</p>
-            <div class="space-y-3">
-              <div>
-                <label class="block text-sm font-medium mb-1">SMTP Server</label>
-                <input type="text" class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]" placeholder="smtp.example.com">
-              </div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-sm font-medium mb-1">Port</label>
-                  <input type="number" class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]" value="587">
-                </div>
-                <div>
-                  <label class="block text-sm font-medium mb-1">Security</label>
-                  <select class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]">
-                    <option>TLS</option>
-                    <option>SSL</option>
-                    <option>None</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div class="flex gap-3">
-              <button onclick="testEmailConfig()" class="px-4 py-2 bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-md hover:opacity-90">
-                Test Configuration
-              </button>
-              <button onclick="saveEmailConfig()" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">
-                Save Settings
-              </button>
-            </div>
-          </div>
-        \`;
-        showSettingsModal();
-      }
-      
-      function showBackupSettings() {
-        document.getElementById('modal-title').textContent = 'Backup & Recovery';
-        document.getElementById('modal-content').innerHTML = \`
-          <div class="space-y-4">
-            <p class="text-[var(--muted-foreground)]">Configure automated backups and recovery options.</p>
-            <div class="bg-[var(--muted)] p-4 rounded-md">
-              <h4 class="font-medium mb-2">Backup Schedule</h4>
-              <p class="text-sm">Currently set to: Manual backups only</p>
-            </div>
-            <div class="flex gap-3">
-              <button onclick="createBackup()" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">
-                Create Backup Now
-              </button>
-              <button onclick="scheduleBackups()" class="px-4 py-2 bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-md hover:opacity-90">
-                Schedule Backups
-              </button>
-            </div>
-          </div>
-        \`;
-        showSettingsModal();
-      }
-      
-      function showSettingsModal() {
-        document.getElementById('settings-modal').classList.remove('hidden');
-        document.getElementById('settings-modal').classList.add('flex');
-      }
-      
-      function closeSettingsModal() {
-        document.getElementById('settings-modal').classList.add('hidden');
-        document.getElementById('settings-modal').classList.remove('flex');
-      }
-      
-      function clearSystemCache() {
-        if (confirm('Clear system cache? This may temporarily slow down the system.')) {
-          // Implementation would go here
-          alert('System cache cleared successfully.');
+    const scriptContent = `
+      (function() {
+        window.showDatabaseSettings = async function() {
+          document.getElementById('modal-title').textContent = 'Database Settings';
+          document.getElementById('modal-content').innerHTML = 
+            '<div class="space-y-4">' +
+              '<p class="text-[var(--muted-foreground)]">Database connection and maintenance settings.</p>' +
+              '<div class="bg-[var(--muted)] p-4 rounded-md">' +
+                '<h4 class="font-medium mb-2">Connection Status</h4>' +
+                '<p class="text-sm text-[var(--success)]">✓ Connected to SQLite database</p>' +
+                '<p class="text-xs text-[var(--muted-foreground)] mt-1">Database file: ./data/aft.db</p>' +
+              '</div>' +
+              '<div class="flex gap-3">' +
+                '<button onclick="runDatabaseMaintenance()" class="px-4 py-2 bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-md hover:opacity-90">Run Maintenance</button>' +
+                '<button onclick="backupDatabase()" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">Backup Database</button>' +
+              '</div>' +
+            '</div>';
+          showSettingsModal();
         }
-      }
-      
-      function exportSystemLogs() {
-        // Implementation would go here
-        alert('Log export functionality not yet implemented.');
-      }
-      
-      function runHealthCheck() {
-        alert('System health check: All systems operational.');
-      }
-      
-      function confirmSystemRestart() {
-        if (confirm('Restart the system? All users will be disconnected.')) {
-          alert('System restart functionality requires server-side implementation.');
+        
+        window.showEmailSettings = async function() {
+          document.getElementById('modal-title').textContent = 'Email Configuration';
+          document.getElementById('modal-content').innerHTML = 
+            '<div class="space-y-4">' +
+              '<p class="text-[var(--muted-foreground)]">Configure SMTP settings for system notifications.</p>' +
+              '<div class="space-y-3">' +
+                '<div>' +
+                  '<label class="block text-sm font-medium mb-1">SMTP Server</label>' +
+                  '<input id="smtp-server" type="text" class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]" placeholder="smtp.example.com">' +
+                '</div>' +
+                '<div class="grid grid-cols-2 gap-3">' +
+                  '<div>' +
+                    '<label class="block text-sm font-medium mb-1">Port</label>' +
+                    '<input id="smtp-port" type="number" class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]" value="587">' +
+                  '</div>' +
+                  '<div>' +
+                    '<label class="block text-sm font-medium mb-1">Security</label>' +
+                    '<select id="smtp-security" class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]">' +
+                      '<option>TLS</option>' +
+                      '<option>SSL</option>' +
+                      '<option>None</option>' +
+                    '</select>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="flex gap-3">' +
+                '<button onclick="testEmailConfig()" class="px-4 py-2 bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-md hover:opacity-90">Test Configuration</button>' +
+                '<button onclick="saveEmailConfig()" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">Save Settings</button>' +
+              '</div>' +
+            '</div>';
+
+          try {
+            const response = await fetch('/api/admin/email-settings');
+            const settings = await response.json();
+            document.getElementById('smtp-server').value = settings.smtpServer;
+            document.getElementById('smtp-port').value = settings.smtpPort;
+            document.getElementById('smtp-security').value = settings.smtpSecurity;
+          } catch (error) {
+            console.error('Failed to load email settings:', error);
+            alert('Could not load email settings.');
+          }
+
+          showSettingsModal();
         }
-      }
-      
-      // Placeholder functions for modal actions
-      function runDatabaseMaintenance() {
-        alert('Database maintenance completed.');
-        closeSettingsModal();
-      }
-      
-      function backupDatabase() {
-        alert('Database backup created successfully.');
-        closeSettingsModal();
-      }
-      
-      function testEmailConfig() {
-        alert('Email configuration test: Not yet implemented.');
-      }
-      
-      function saveEmailConfig() {
-        alert('Email settings saved successfully.');
-        closeSettingsModal();
-      }
-      
-      function createBackup() {
-        alert('Backup created successfully.');
-        closeSettingsModal();
-      }
-      
-      function scheduleBackups() {
-        alert('Backup scheduling: Not yet implemented.');
-        closeSettingsModal();
-      }
+        
+        window.showBackupSettings = async function() {
+          document.getElementById('modal-title').textContent = 'Backup & Recovery';
+          document.getElementById('modal-content').innerHTML = 
+            '<div class="space-y-4">' +
+              '<p class="text-[var(--muted-foreground)]">Configure automated backups and recovery options.</p>' +
+              '<div class="space-y-2">' +
+                '<label for="backup-schedule" class="block text-sm font-medium">Backup Schedule</label>' +
+                '<select id="backup-schedule" class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)]">' +
+                  '<option value="manual">Manual</option>' +
+                  '<option value="daily">Daily</option>' +
+                  '<option value="weekly">Weekly</option>' +
+                '</select>' +
+                '<p class="text-xs text-[var(--muted-foreground)]">Note: A server-side process is required to run scheduled backups.</p>' +
+              '</div>' +
+              '<div class="flex gap-3 pt-2">' +
+                '<button onclick="createBackup()" class="px-4 py-2 bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-md hover:opacity-90">Create Backup Now</button>' +
+                '<button onclick="scheduleBackups()" class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">Save Schedule</button>' +
+              '</div>' +
+            '</div>';
+
+          try {
+            const response = await fetch('/api/admin/backup-settings');
+            const settings = await response.json();
+            document.getElementById('backup-schedule').value = settings['backup.schedule'] || 'manual';
+          } catch (error) {
+            console.error('Failed to load backup settings:', error);
+          }
+
+          showSettingsModal();
+        }
+        
+        function showSettingsModal() {
+          document.getElementById('settings-modal').classList.remove('hidden');
+          document.getElementById('settings-modal').classList.add('flex');
+        }
+        
+        window.closeSettingsModal = function() {
+          document.getElementById('settings-modal').classList.add('hidden');
+          document.getElementById('settings-modal').classList.remove('flex');
+        }
+        
+        window.clearSystemCache = function() {
+          if (confirm('Clear system cache? This may temporarily slow down the system.')) {
+            fetch('/api/admin/clear-cache', { method: 'POST' })
+              .then(response => response.json())
+              .then(result => {
+                alert(result.message);
+              })
+              .catch(error => {
+                console.error('Failed to clear cache:', error);
+                alert('An unexpected error occurred while clearing the cache.');
+              });
+          }
+        }
+        
+        window.exportSystemLogs = function() {
+          window.location.href = '/api/admin/export-logs';
+        }
+        
+        window.runHealthCheck = async function() {
+          try {
+            const response = await fetch('/api/admin/health-check');
+            const result = await response.json();
+            
+            let report = 'System Health Report:\n\n';
+            if (result.success) {
+              report += 'Overall Status: ' + result.status.overall + '\n';
+              report += 'Database: ' + result.status.database + '\n';
+            } else {
+              report += 'Overall Status: ERROR\n';
+              report += 'Details: ' + result.message + '\n';
+            }
+            
+            alert(report);
+            
+          } catch (error) {
+            console.error('Failed to run health check:', error);
+            alert('An unexpected error occurred while running the health check.');
+          }
+        }
+        
+        window.confirmSystemRestart = function() {
+          if (confirm('Restart the system? All users will be disconnected.')) {
+            fetch('/api/admin/restart-system', { method: 'POST' })
+              .then(response => response.json())
+              .then(result => {
+                if (result.success) {
+                  alert('System is restarting. The page will become unresponsive.');
+                  document.body.innerHTML = '<div class="h-screen w-full flex items-center justify-center text-2xl font-bold">System is restarting... Please wait a moment and then refresh the page.</div>';
+                } else {
+                  alert('Error: ' + result.message);
+                }
+              })
+              .catch(error => {
+                console.error('Failed to restart system:', error);
+                alert('An unexpected error occurred while restarting the system.');
+              });
+          }
+        }
+        
+        window.runDatabaseMaintenance = async function() {
+          try {
+            const response = await fetch('/api/admin/run-maintenance', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            const result = await response.json();
+            alert(result.message);
+          } catch (error) {
+            console.error('Failed to run database maintenance:', error);
+            alert('An unexpected error occurred while running maintenance.');
+          } finally {
+            closeSettingsModal();
+          }
+        }
+        
+        window.backupDatabase = async function() {
+          try {
+            const response = await fetch('/api/admin/backup-database', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            const result = await response.json();
+            if (result.success) {
+              alert('Backup created successfully at: ' + result.backupPath);
+            } else {
+              alert('Error creating backup: ' + result.message);
+            }
+          } catch (error) {
+            console.error('Failed to create database backup:', error);
+            alert('An unexpected error occurred while creating the backup.');
+          } finally {
+            closeSettingsModal();
+          }
+        }
+        
+        window.testEmailConfig = async function() {
+          const settings = { smtpServer: document.getElementById('smtp-server').value, smtpPort: document.getElementById('smtp-port').value, smtpSecurity: document.getElementById('smtp-security').value };
+          try {
+            const response = await fetch('/api/admin/test-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+            const result = await response.json();
+            alert(result.message);
+          } catch (error) {
+            console.error('Failed to test email settings:', error);
+            alert('An unexpected error occurred while testing the configuration.');
+          }
+        }
+        
+        window.saveEmailConfig = async function() {
+          const settings = { smtpServer: document.getElementById('smtp-server').value, smtpPort: document.getElementById('smtp-port').value, smtpSecurity: document.getElementById('smtp-security').value };
+          try {
+            const response = await fetch('/api/admin/email-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+            const result = await response.json();
+            alert(result.message);
+            if (result.success) {
+              closeSettingsModal();
+            }
+          } catch (error) {
+            console.error('Failed to save email settings:', error);
+            alert('An unexpected error occurred while saving settings.');
+          }
+        }
+        
+        window.createBackup = function() {
+          backupDatabase();
+        }
+        
+        window.scheduleBackups = function() {
+          const schedule = document.getElementById('backup-schedule').value;
+          const settings = { 'backup.schedule': schedule };
+          fetch('/api/admin/backup-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
+            .then(res => res.json())
+            .then(result => {
+              alert(result.message);
+              if (result.success) {
+                closeSettingsModal();
+              }
+            })
+            .catch(error => {
+              console.error('Failed to save backup schedule:', error);
+              alert('An error occurred while saving the schedule.');
+            });
+        }
+      })();
     `;
+    return scriptContent;
   }
 }

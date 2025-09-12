@@ -107,7 +107,7 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
   }
   
   const canSubmit = requestData.status === 'draft';
-  const canEdit = ['draft', 'submitted', 'rejected'].includes(requestData.status);
+  const canEdit = ['draft', 'rejected', 'needs_revision'].includes(requestData.status);
   
   const detailHtml = `
     <div class="min-h-screen bg-[var(--background)]">
