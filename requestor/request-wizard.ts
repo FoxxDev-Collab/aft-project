@@ -826,13 +826,17 @@ export class RequestWizard {
             if (response.ok) {
               const result = await response.json();
               console.log('Save response:', result);
+              console.log('result.requestId:', result.requestId);
+              console.log('data.draft_id:', data.draft_id);
               const draftId = result.requestId || data.draft_id;
-              console.log('Draft ID for redirect:', draftId);
+              console.log('Final Draft ID for redirect:', draftId);
               if (draftId) {
                 // Immediate redirect - no delay
+                console.log('Redirecting to:', '/requestor/requests/' + draftId);
                 window.location.href = '/requestor/requests/' + draftId;
               } else {
                 console.error('No draft ID returned from save');
+                console.error('Full result object:', JSON.stringify(result));
                 alert('Draft saved but could not determine request ID for redirect.');
               }
             } else {
