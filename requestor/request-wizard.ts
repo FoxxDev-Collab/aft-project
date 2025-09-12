@@ -1,4 +1,4 @@
-// AFT Request Creation Wizard - Refactored Version
+// AFT Request Creation Wizard - Sections I & II from ACDS Form v1.3
 import { ComponentBuilder } from "../components/ui/server-components";
 import { FormComponents } from "../components/ui/form-components";
 import { RequestorNavigation, type RequestorUser } from "./requestor-nav";
@@ -53,17 +53,6 @@ export class RequestWizard {
       }
     }
 
-    // Load ALL DTAs immediately for the form
-    const allDTAs = db.query(`
-      SELECT DISTINCT u.id, u.email, u.first_name, u.last_name,
-        CASE WHEN md.id IS NOT NULL THEN 1 ELSE 0 END as has_drive
-      FROM users u
-      JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
-      LEFT JOIN media_drives md ON md.issued_to_user_id = u.id AND md.status = 'issued'
-      WHERE u.is_active = 1 AND ur.role = 'dta'
-      ORDER BY u.last_name, u.first_name
-    `).all() as any[];
-
     // Status indicator
     const statusIndicator = existingDraft ? `
       <div class="mb-6 p-4 bg-[var(--muted)] rounded-lg border border-[var(--border)]">
@@ -93,12 +82,6 @@ export class RequestWizard {
       }
     })();
 
-    // Generate DTA options with drive status indicator
-    const dtaOptions = allDTAs.map(dta => ({
-      value: dta.id.toString(),
-      label: `${dta.first_name} ${dta.last_name} (${dta.email})${dta.has_drive ? '' : ' - ⚠️ No Drive Issued'}`
-    }));
-
     // Section I - Media Information
     const sectionI = `
       ${FormComponents.sectionHeader({
@@ -107,68 +90,54 @@ export class RequestWizard {
         sectionNumber: 'I'
       })}
       
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-          <h3 class="text-sm font-semibold text-[var(--foreground)]">Assignment</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            ${FormComponents.formField({
-              label: 'Assigned Data Transfer Agent (DTA)',
-              required: true,
-              description: 'Select the DTA responsible for this transfer',
-              children: FormComponents.select({
-                name: 'dta_id',
-                value: existingDraft?.dta_id?.toString() || '',
-                placeholder: 'Select a DTA',
-                required: true,
-                options: dtaOptions
-              })
-            })}
-            
-            <div id="dta-warning" class="hidden col-span-2 p-3 bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-md">
-              <p class="text-sm text-[var(--warning)]">⚠️ Selected DTA does not have a drive issued. Contact Media Custodian.</p>
-            </div>
-            
-            ${FormComponents.formField({
-              label: 'Media Control Number',
-              description: 'Unique identifier for this media transfer',
-              children: FormComponents.textInput({
-                name: 'media_control_number',
-                value: existingDraft?.request_number || '',
-                maxLength: 50
-              })
-            })}
-          </div>
-        </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        ${FormComponents.formField({
+          label: 'Assigned Data Transfer Agent (DTA)',
+          required: true,
+          description: 'Select the DTA responsible for this transfer',
+          children: FormComponents.select({
+            name: 'dta_id',
+            value: existingDraft?.dta_id?.toString() || '',
+            placeholder: 'Select a DTA',
+            required: true,
+            options: []
+          })
+        })}
         
-        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-          <h3 class="text-sm font-semibold text-[var(--foreground)]">Media Details</h3>
-          <div class="grid grid-cols-1 gap-6">
-            ${FormComponents.formField({
-              label: 'Media Type',
-              required: true,
-              description: 'Type of media being used for transfer',
-              children: FormComponents.select({
-                name: 'media_type',
-                value: existingDraft?.media_type || '',
-                required: true,
-                options: [
-                  { value: 'SSD', label: 'SSD (Solid State Drive)' },
-                  { value: 'SSD-T', label: 'SSD (Travel)' },
-                  { value: 'DVD', label: 'DVD' },
-                  { value: 'DVD-R', label: 'DVD (Rewritable)' },
-                  { value: 'DVD-RDL', label: 'DVD (Rewritable Dual Layer)' },
-                  { value: 'CD', label: 'CD' },
-                  { value: 'CD-R', label: 'CD (Rewritable)' },
-                  { value: 'CD-RW', label: 'CD (Rewritable Dual Layer)' }
-                ]
-              })
-            })}
-          </div>
-        </div>
+        ${FormComponents.formField({
+          label: 'Media Control Number',
+          description: 'Unique identifier for this media transfer',
+          children: FormComponents.textInput({
+            name: 'media_control_number',
+            value: existingDraft?.request_number || '',
+            maxLength: 50
+          })
+        })}
+        
+        ${FormComponents.formField({
+          label: 'Media Type',
+          required: true,
+          description: 'Type of media being used for transfer',
+          children: FormComponents.select({
+            name: 'media_type',
+            value: existingDraft?.media_type || '',
+            required: true,
+            options: [
+              { value: 'SSD', label: 'SSD (Solid State Drive)' },
+              { value: 'SSD-T', label: 'SSD (Travel)' },
+              { value: 'DVD', label: 'DVD' },
+              { value: 'DVD-R', label: 'DVD (Rewritable)' },
+              { value: 'DVD-RDL', label: 'DVD (Rewritable Dual Layer)' },
+              { value: 'CD', label: 'CD' },
+              { value: 'CD-R', label: 'CD (Rewritable)' },
+              { value: 'CD-RW', label: 'CD (Rewritable Dual Layer)' }
+            ]
+          })
+        })}
       </div>
     `;
 
-    // Section II - Transfer Details (unchanged)
+    // Section II - Transfer Details
     const sectionII = `
       ${FormComponents.sectionHeader({
         title: 'Transfer Details',
@@ -176,87 +145,76 @@ export class RequestWizard {
         sectionNumber: 'II'
       })}
       
-      <div class="space-y-8">
-        <!-- Systems & Classification -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-            <h3 class="text-sm font-semibold text-[var(--foreground)]">Source System</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              ${FormComponents.formField({
-                label: 'Source Information System (IS)',
-                required: true,
-                children: FormComponents.textInput({
-                  name: 'source_is',
-                  value: existingDraft?.source_system || '',
-                  required: true,
-                  maxLength: 100
-                })
-              })}
-              ${FormComponents.formField({
-                label: 'Source Classification',
-                required: true,
-                children: FormComponents.select({
-                  name: 'source_classification',
-                  value: existingDraft?.source_classification || '',
-                  required: true,
-                  options: [
-                    { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
-                    { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
-                    { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
-                    { value: 'SECRET', label: 'SECRET' },
-                    { value: 'TOP SECRET', label: 'TOP SECRET' },
-                    { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
-                  ]
-                })
-              })}
-            </div>
-          </div>
-          <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-            <h3 class="text-sm font-semibold text-[var(--foreground)]">Primary Destination</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              ${FormComponents.formField({
-                label: 'Destination Information System (IS)',
-                required: true,
-                children: FormComponents.textInput({
-                  name: 'destination_is',
-                  value: existingDraft?.dest_system || '',
-                  required: true,
-                  maxLength: 100
-                })
-              })}
-              ${FormComponents.formField({
-                label: 'Destination Classification',
-                required: true,
-                children: FormComponents.select({
-                  name: 'destination_classification',
-                  value: existingDraft?.destination_classification || '',
-                  required: true,
-                  options: [
-                    { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
-                    { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
-                    { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
-                    { value: 'SECRET', label: 'SECRET' },
-                    { value: 'TOP SECRET', label: 'TOP SECRET' },
-                    { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
-                  ]
-                })
-              })}
-            </div>
-          </div>
-        </div>
-
-        <!-- Additional Destinations -->
-        <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <h4 class="text-sm font-medium text-[var(--foreground)]">Additional Destinations</h4>
-            <button type="button" class="action-btn secondary" onclick="RequestWizard.addDestination()">+ Add Destination</button>
-          </div>
-          <div id="destinations-list" class="space-y-2"></div>
-          <p class="text-xs text-[var(--muted-foreground)]">Add any additional destination systems and their classification.</p>
-        </div>
-
-        <!-- Classification & Disposition -->
+      <div class="space-y-6">
+        <!-- Source and Destination Information -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          ${FormComponents.formField({
+            label: 'Source Information System (IS)',
+            required: true,
+            children: FormComponents.textInput({
+              name: 'source_is',
+              value: existingDraft?.source_system || '',
+              required: true,
+              maxLength: 100
+            })
+          })}
+          
+          ${FormComponents.formField({
+            label: 'Source Classification',
+            required: true,
+            children: FormComponents.select({
+              name: 'source_classification',
+              value: existingDraft?.source_classification || '',
+              required: true,
+              options: [
+                { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
+                { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
+                { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
+                { value: 'SECRET', label: 'SECRET' },
+                { value: 'TOP SECRET', label: 'TOP SECRET' },
+                { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
+              ]
+            })
+          })}
+          
+          ${FormComponents.formField({
+            label: 'Destination Information System (IS)',
+            required: true,
+            children: FormComponents.textInput({
+              name: 'destination_is',
+              value: existingDraft?.dest_system || '',
+              required: true,
+              maxLength: 100
+            })
+          })}
+          
+          ${FormComponents.formField({
+            label: 'Destination Classification',
+            required: true,
+            children: FormComponents.select({
+              name: 'destination_classification',
+              value: existingDraft?.destination_classification || '',
+              required: true,
+              options: [
+                { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
+                { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
+                { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
+                { value: 'SECRET', label: 'SECRET' },
+                { value: 'TOP SECRET', label: 'TOP SECRET' },
+                { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
+              ]
+            })
+          })}
+
+          <!-- Extra Destination rows (inline) -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-medium text-[var(--foreground)]">Add more Destinations</h4>
+              <button type="button" class="action-btn secondary" onclick="addDestination()">+ Add Destination</button>
+            </div>
+            <div id="destinations-list" class="space-y-2"></div>
+          </div>
+          
           ${FormComponents.formField({
             label: 'Media Disposition',
             required: true,
@@ -275,6 +233,7 @@ export class RequestWizard {
               ]
             })
           })}
+          
           ${FormComponents.formField({
             label: 'Overall Classification',
             required: true,
@@ -295,7 +254,7 @@ export class RequestWizard {
           })}
         </div>
 
-        <!-- Transfer Spec -->
+        <!-- Transfer Type and Direction -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           ${FormComponents.formField({
             label: 'Transfer Type',
@@ -312,6 +271,7 @@ export class RequestWizard {
               ]
             })
           })}
+          
           ${FormComponents.formField({
             label: 'Destination File Operation',
             required: true,
@@ -328,7 +288,7 @@ export class RequestWizard {
           })}
         </div>
 
-        <!-- Process Details -->
+        <!-- Non-Human Readable Process -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           ${FormComponents.formField({
             label: 'Process Name (If Non-Human Readable)',
@@ -339,6 +299,7 @@ export class RequestWizard {
               maxLength: 200
             })
           })}
+          
           ${FormComponents.formField({
             label: 'Procedure Document #',
             description: 'Reference document number (as applicable)',
@@ -363,170 +324,103 @@ export class RequestWizard {
           })
         })}
 
-        <!-- Files -->
-        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-          <h3 class="text-sm font-semibold text-[var(--foreground)]">Files</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              ${FormComponents.formField({
-                label: 'Number of Files for Transfer',
-                required: true,
-                children: FormComponents.textInput({
-                  name: 'num_files',
-                  value: existingDraft?.num_files?.toString() || '',
-                  required: true
-                })
-              })}
-            </div>
-            <div class="md:col-span-2">
-              ${FormComponents.formField({
-                label: 'File Names, Types, and Classification',
-                required: true,
-                description: 'List each file with its type and classification level',
-                children: FormComponents.fileListInput({
-                  files: existingDraft?.files || [],
-                  maxFiles: 5
-                })
-              })}
-            </div>
-          </div>
-        </div>
+        <!-- Number of Files -->
+        ${FormComponents.formField({
+          label: 'Number of Files for Transfer',
+          required: true,
+          children: FormComponents.textInput({
+            name: 'num_files',
+            value: existingDraft?.num_files?.toString() || '',
+            required: true
+          })
+        })}
 
-        <!-- Transport & Encryption -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-[var(--muted)] p-4 rounded-md space-y-4 border border-[var(--border)]">
-            <h4 class="font-medium text-[var(--foreground)]">Media Transportation</h4>
-            ${FormComponents.formField({
-              label: 'Will media be transported outside an approved area?',
-              required: true,
-              children: FormComponents.radioGroup({
-                name: 'media_transportation',
-                value: existingDraft?.media_transportation?.toString() || '',
-                inline: true,
-                options: [
-                  { value: 'true', label: 'Yes' },
-                  { value: 'false', label: 'No' }
-                ]
-              })
-            })}
-            <div id="transport-details" style="display: ${existingDraft?.media_transportation ? 'block' : 'none'}">
-              <div class="grid grid-cols-1 gap-4">
-                ${FormComponents.formField({
-                  label: 'Media Destination',
-                  children: FormComponents.textInput({
-                    name: 'media_destination',
-                    value: existingDraft?.media_destination || '',
-                    maxLength: 200
-                  })
-                })}
-                ${FormComponents.formField({
-                  label: 'Destination POC / Customer Name',
-                  children: FormComponents.textInput({
-                    name: 'destination_poc',
-                    value: existingDraft?.dest_contact || '',
-                    maxLength: 100
-                  })
-                })}
-                ${FormComponents.formField({
-                  label: 'Destination Address / Location',
-                  children: FormComponents.textarea({
-                    name: 'destination_address',
-                    value: existingDraft?.dest_location || '',
-                    rows: 3
-                  })
-                })}
-              </div>
-            </div>
-          </div>
-          <div class="bg-[var(--muted)] p-4 rounded-md border border-[var(--border)]">
-            <h4 class="font-medium text-[var(--foreground)] mb-2">Media Encryption</h4>
-            <p class="text-xs text-[var(--muted-foreground)] mb-4">
-              Cryptographic mechanisms during transport outside of controlled areas shall be either an NSA or FIPS 140-2 compliant algorithm. [MP-5(4)]
-            </p>
-            ${FormComponents.formField({
-              label: 'Will Media be Encrypted?',
-              required: true,
-              children: FormComponents.radioGroup({
-                name: 'media_encrypted',
-                value: existingDraft?.media_encrypted?.toString() || '',
-                inline: true,
-                options: [
-                  { value: 'true', label: 'Yes' },
-                  { value: 'false', label: 'No' }
-                ]
-              })
-            })}
-          </div>
-        </div>
-      </div>
-    `;
+        <!-- File List -->
+        ${FormComponents.formField({
+          label: 'File Names, Types, and Classification',
+          required: true,
+          description: 'List each file with its type and classification level',
+          children: FormComponents.fileListInput({
+            files: existingDraft?.files || [],
+            maxFiles: 5
+          })
+        })}
 
-    // Signature Section - Only show when reviewing saved draft
-    const signatureSection = existingDraft && existingDraft.status === 'draft' ? `
-      ${FormComponents.sectionHeader({
-        title: 'Review & Digital Signature',
-        subtitle: 'Review your request and provide digital signature to submit',
-        sectionNumber: 'III'
-      })}
-      
-      <div class="space-y-6">
-        <!-- Request Summary -->
-        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4">
-          <h3 class="text-sm font-semibold text-[var(--foreground)] mb-3">Request Summary</h3>
-          <div class="grid grid-cols-2 gap-2 text-sm">
-            <div><span class="text-[var(--muted-foreground)]">Request #:</span> <span class="font-medium">${existingDraft.request_number}</span></div>
-            <div><span class="text-[var(--muted-foreground)]">Classification:</span> <span class="font-medium">${existingDraft.classification || 'Not specified'}</span></div>
-            <div><span class="text-[var(--muted-foreground)]">Source:</span> <span class="font-medium">${existingDraft.source_system || 'Not specified'}</span></div>
-            <div><span class="text-[var(--muted-foreground)]">Destination:</span> <span class="font-medium">${existingDraft.dest_system || 'Not specified'}</span></div>
-          </div>
-        </div>
-        
-        <!-- Certification & Signature -->
-        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-          <h3 class="text-sm font-semibold text-[var(--foreground)]">Certification & Signature</h3>
-          
-          <div class="text-sm text-[var(--muted-foreground)] mb-4 p-3 bg-[var(--card)] rounded border-l-4 border-[var(--primary)]">
-            <strong>Certification Statement:</strong><br/>
-            "I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts and comply with all applicable security requirements."
-          </div>
+        <!-- Media Transportation -->
+        <div class="bg-[var(--muted)] p-4 rounded-md space-y-4">
+          <h4 class="font-medium text-[var(--foreground)]">Media Transportation</h4>
           
           ${FormComponents.formField({
-            label: 'Choose Signature Method',
+            label: 'Will media be transported outside an approved area?',
             required: true,
             children: FormComponents.radioGroup({
-              name: 'signature_method',
-              value: 'manual',
+              name: 'media_transportation',
+              value: existingDraft?.media_transportation?.toString() || '',
+              inline: true,
               options: [
-                { value: 'manual', label: 'Type Name (Manual Signature)' },
-                { value: 'cac', label: 'CAC Certificate (Automatic via HTTPS)' }
+                { value: 'true', label: 'Yes' },
+                { value: 'false', label: 'No' }
               ]
             })
           })}
           
-          <div id="manual-signature-area" class="mt-4">
-            ${FormComponents.formField({
-              label: 'Type your full name to confirm certification',
-              required: true,
-              description: 'By typing your name, you certify the accuracy of this request',
-              children: FormComponents.textInput({
-                name: 'manual_signature',
-                value: '',
-                placeholder: 'Enter your full legal name'
-              })
-            })}
-          </div>
-          
-          <div id="cac-signature-area" class="mt-4 hidden">
-            <div class="flex items-center gap-3 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
-              <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
-              <span class="text-sm text-[var(--info)]">CAC authentication will be performed via HTTPS client certificate</span>
+          <div id="transport-details" style="display: ${existingDraft?.media_transportation ? 'block' : 'none'}">
+            <div class="grid grid-cols-1 gap-4">
+              ${FormComponents.formField({
+                label: 'Media Destination',
+                children: FormComponents.textInput({
+                  name: 'media_destination',
+                  value: existingDraft?.media_destination || '',
+                  maxLength: 200
+                })
+              })}
+              
+              ${FormComponents.formField({
+                label: 'Destination POC / Customer Name',
+                children: FormComponents.textInput({
+                  name: 'destination_poc',
+                  value: existingDraft?.dest_contact || '',
+                  maxLength: 100
+                })
+              })}
+              
+              ${FormComponents.formField({
+                label: 'Destination Address / Location',
+                children: FormComponents.textarea({
+                  name: 'destination_address',
+                  value: existingDraft?.dest_location || '',
+                  rows: 3
+                })
+              })}
             </div>
           </div>
         </div>
-      </div>
-    ` : '';
 
-    // Form actions based on draft status
+        <!-- Media Encryption -->
+        <div class="bg-[var(--muted)] p-4 rounded-md">
+          <h4 class="font-medium text-[var(--foreground)] mb-2">Media Encryption</h4>
+          <p class="text-xs text-[var(--muted-foreground)] mb-4">
+            Cryptographic mechanisms during transport outside of controlled areas shall be either an NSA or FIPS 140-2 compliant algorithm. [MP-5(4)]
+          </p>
+          
+          ${FormComponents.formField({
+            label: 'Will Media be Encrypted?',
+            required: true,
+            children: FormComponents.radioGroup({
+              name: 'media_encrypted',
+              value: existingDraft?.media_encrypted?.toString() || '',
+              inline: true,
+              options: [
+                { value: 'true', label: 'Yes' },
+                { value: 'false', label: 'No' }
+              ]
+            })
+          })}
+        </div>
+      </div>
+    `;
+
+    // Form actions based on status
     const formActions = `
       <div class="flex justify-between items-center pt-6 border-t border-[var(--border)]">
         <button
@@ -539,32 +433,32 @@ export class RequestWizard {
         
         <div class="flex space-x-3">
           ${existingDraft && existingDraft.status !== 'draft' ? `
-            <div class="px-4 py-2 text-sm text-[var(--muted-foreground)]">
-              Request already submitted
-            </div>
-          ` : `
             <button
               type="button"
-              onclick="RequestWizard.saveDraft()"
-              id="save-button"
-              class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick="toggleEditMode()"
+              id="edit-button"
+              class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors"
             >
-              <span id="save-button-text">${existingDraft ? 'Update Draft' : 'Save Draft'}</span>
-              <span id="save-button-spinner" class="hidden">Saving...</span>
+              Edit
             </button>
-            
-            ${existingDraft && existingDraft.status === 'draft' ? `
-              <button
-                type="button"
-                onclick="RequestWizard.submitRequest()"
-                id="submit-button"
-                class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span id="submit-button-text">Sign & Submit Request</span>
-                <span id="submit-button-spinner" class="hidden">Submitting...</span>
-              </button>
-            ` : ''}
-          `}
+          ` : ''}
+          
+          <button
+            type="button"
+            onclick="saveDraft()"
+            id="save-button"
+            class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors"
+          >
+            Save
+          </button>
+          
+          <button
+            type="button"
+            onclick="saveAndClose()"
+            id="submit-button"
+            class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors"
+          >
+            Save and Close
         </div>
       </div>
     `;
@@ -577,17 +471,13 @@ export class RequestWizard {
           <input type="hidden" name="requestor_id" value="${userId}" />
           <input type="hidden" id="initial-destinations" value='${initialDestinationsJson.replace(/'/g, "&#39;").replace(/</g, "&lt;")}' />
           <input type="hidden" name="destinations_json" id="destinations_json" value='' />
-          <input type="hidden" id="dta-data" value='${JSON.stringify(allDTAs).replace(/'/g, "&#39;").replace(/</g, "&lt;")}' />
 
           <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6 space-y-8" id="form-container">
             ${sectionI}
             ${sectionII}
-            ${signatureSection}
             ${formActions}
           </div>
         </form>
-        
-        <script>${RequestWizard.getScript()}</script>
     `;
 
     return RequestorNavigation.renderLayout(
@@ -601,381 +491,263 @@ export class RequestWizard {
 
   static getScript(): string {
     return `
-      // Refactored Request Wizard Script
-      window.RequestWizard = {
-        destinations: [],
-        dtaData: [],
-        
-        init() {
-          // Parse DTA data from hidden field
-          const dtaDataEl = document.getElementById('dta-data');
-          if (dtaDataEl) {
-            try {
-              this.dtaData = JSON.parse(dtaDataEl.value);
-            } catch (e) {
-              console.error('Failed to parse DTA data');
-            }
-          }
-          
-          // Initialize destinations from existing data
-          try {
-            const initEl = document.getElementById('initial-destinations');
-            if (initEl && initEl.value) {
-              const parsed = JSON.parse(initEl.value);
-              if (Array.isArray(parsed)) {
-                // Skip the first (primary) destination
-                this.destinations = parsed.slice(1).map(d => ({
-                  is: d?.is || '',
-                  classification: d?.classification || ''
-                }));
-              }
-            }
-          } catch (e) {
-            console.warn('Failed to parse initial destinations');
-          }
-          
-          this.renderDestinations();
-          this.setupEventListeners();
-          this.generateControlNumber();
-          this.validateDTA();
-        },
-        
-        setupEventListeners() {
-          // DTA selection change
-          const dtaSelect = document.querySelector('select[name="dta_id"]');
-          if (dtaSelect) {
-            dtaSelect.addEventListener('change', () => this.validateDTA());
-          }
-          
-          // Media transportation toggle
-          const transportRadios = document.querySelectorAll('input[name="media_transportation"]');
-          transportRadios.forEach(radio => {
-            radio.addEventListener('change', function() {
-              const details = document.getElementById('transport-details');
-              if (details) {
-                details.style.display = this.value === 'true' ? 'block' : 'none';
-              }
-            });
-          });
-          
-          // Signature method toggle
-          const signatureRadios = document.querySelectorAll('input[name="signature_method"]');
-          signatureRadios.forEach(radio => {
-            radio.addEventListener('change', function() {
-              const manualArea = document.getElementById('manual-signature-area');
-              const cacArea = document.getElementById('cac-signature-area');
-              
-              if (this.value === 'manual') {
-                if (manualArea) manualArea.classList.remove('hidden');
-                if (cacArea) cacArea.classList.add('hidden');
-              } else if (this.value === 'cac') {
-                if (manualArea) manualArea.classList.add('hidden');
-                if (cacArea) cacArea.classList.remove('hidden');
-              }
-            });
-          });
-        },
-        
-        generateControlNumber() {
-          const controlField = document.querySelector('input[name="media_control_number"]');
-          if (controlField && !controlField.value) {
-            const timestamp = Date.now().toString(36).toUpperCase();
-            const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-            controlField.value = 'AFT-' + timestamp + '-' + random;
-          }
-        },
-        
-        async validateDTA() {
-          const dtaSelect = document.querySelector('select[name="dta_id"]');
-          const warningDiv = document.getElementById('dta-warning');
-          
-          if (!dtaSelect || !dtaSelect.value) {
-            if (warningDiv) warningDiv.classList.add('hidden');
-            return;
-          }
-          
-          const selectedDTA = this.dtaData.find(d => d.id.toString() === dtaSelect.value);
-          
-          if (selectedDTA && !selectedDTA.has_drive) {
-            // Show warning but don't disable form
-            if (warningDiv) warningDiv.classList.remove('hidden');
-          } else {
-            if (warningDiv) warningDiv.classList.add('hidden');
-            
-            // Try to fetch drive details
-            try {
-              const res = await fetch('/api/requestor/dta/' + dtaSelect.value + '/issued-drive');
-              const data = await res.json();
-              
-              if (data.hasDrive && data.drive) {
-                const controlField = document.querySelector('input[name="media_control_number"]');
-                const mediaTypeSelect = document.querySelector('select[name="media_type"]');
-                
-                if (controlField && data.drive.media_control_number) {
-                  controlField.value = data.drive.media_control_number;
-                }
-                if (mediaTypeSelect && data.drive.type) {
-                  mediaTypeSelect.value = data.drive.type;
-                }
-              }
-            } catch (e) {
-              console.error('Failed to fetch drive details', e);
-            }
-          }
-        },
-        
-        renderDestinations() {
-          const container = document.getElementById('destinations-list');
-          if (!container) return;
-          
-          container.innerHTML = this.destinations.map((dest, idx) => {
-            const isVal = dest?.is || '';
-            const clsVal = dest?.classification || '';
-            const options = ['', 'UNCLASSIFIED', 'CUI', 'CONFIDENTIAL', 'SECRET', 'TOP SECRET', 'TOP SECRET//SCI']
-              .map(v => {
-                const selected = v === clsVal ? ' selected' : '';
-                return '<option value="' + v + '"' + selected + '>' + (v || 'Select Classification') + '</option>';
-              }).join('');
-              
-            return (
-              '<div class="grid grid-cols-1 md:grid-cols-3 gap-2" data-dest-index="' + idx + '">' +
-                '<input type="text" placeholder="Destination IS" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" value="' + isVal + '" oninput="RequestWizard.updateDestination(' + idx + ', \\'is\\', this.value)" />' +
-                '<select class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" onchange="RequestWizard.updateDestination(' + idx + ', \\'classification\\', this.value)">' + options + '</select>' +
-                '<button type="button" class="px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded" onclick="RequestWizard.removeDestination(' + idx + ')">Remove</button>' +
-              '</div>'
-            );
-          }).join('');
-        },
-        
-        addDestination() {
-          this.destinations.push({ is: '', classification: '' });
-          this.renderDestinations();
-        },
-        
-        removeDestination(index) {
-          this.destinations.splice(index, 1);
-          this.renderDestinations();
-        },
-        
-        updateDestination(index, key, value) {
-          if (!this.destinations[index]) {
-            this.destinations[index] = { is: '', classification: '' };
-          }
-          this.destinations[index][key] = value;
-        },
-        
-        async saveDraft() {
-          // Show loading state
-          const saveBtn = document.getElementById('save-button');
-          const saveBtnText = document.getElementById('save-button-text');
-          const saveBtnSpinner = document.getElementById('save-button-spinner');
-          
-          if (saveBtn) {
-            saveBtn.setAttribute('disabled', 'disabled');
-            if (saveBtnText) saveBtnText.classList.add('hidden');
-            if (saveBtnSpinner) saveBtnSpinner.classList.remove('hidden');
-          }
-          
-          const form = document.getElementById('aft-request-form');
-          const formData = new FormData(form);
-          const data = Object.fromEntries(formData.entries());
-          
-          // Validate required fields
-          const dtaSelect = document.querySelector('select[name="dta_id"]');
-          if (!dtaSelect || !dtaSelect.value) {
-            alert('Please select a DTA for this request.');
-            this.resetSaveButton();
-            return;
-          }
-          
-          // Collect files
-          const files = [];
-          const fileRows = document.querySelectorAll('[data-file-index]');
-          fileRows.forEach(row => {
-            const idx = row.getAttribute('data-file-index');
-            const name = row.querySelector('[name="files[' + idx + '][name]"]')?.value;
-            const type = row.querySelector('[name="files[' + idx + '][type]"]')?.value;
-            const size = row.querySelector('[name="files[' + idx + '][size]"]')?.value;
-            const classification = row.querySelector('[name="files[' + idx + '][classification]"]')?.value;
-            
-            if (name && classification) {
-              files.push({ name, type: type || '', size: size || '', classification });
-            }
-          });
-          
-          data.files = JSON.stringify(files);
-          
-          // Compose destinations
-          const primaryIs = document.querySelector('input[name="destination_is"]')?.value || '';
-          const primaryCls = document.querySelector('select[name="destination_classification"]')?.value || '';
-          const allDestinations = [
-            { is: primaryIs, classification: primaryCls },
-            ...this.destinations
-          ];
-          
-          data.destinations_json = JSON.stringify(allDestinations);
-          data.status = 'draft';
-          
-          try {
-            const response = await fetch('/api/requestor/save-draft', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(data)
-            });
-            
-            if (response.ok) {
-              const result = await response.json();
-              console.log('Save response:', result);
-              console.log('result.requestId:', result.requestId);
-              console.log('data.draft_id:', data.draft_id);
-              const draftId = result.requestId || data.draft_id;
-              console.log('Final Draft ID for redirect:', draftId);
-              if (draftId) {
-                // Immediate redirect - no delay
-                console.log('Redirecting to:', '/requestor/requests/' + draftId);
-                window.location.href = '/requestor/requests/' + draftId;
-              } else {
-                console.error('No draft ID returned from save');
-                console.error('Full result object:', JSON.stringify(result));
-                alert('Draft saved but could not determine request ID for redirect.');
-              }
-            } else {
-              alert('Failed to save draft. Please check all required fields and try again.');
-              this.resetSaveButton();
-            }
-          } catch (e) {
-            console.error('Save draft error:', e);
-            alert('Failed to save draft. Please try again.');
-            this.resetSaveButton();
-          }
-        },
-        
-        resetSaveButton() {
-          const saveBtn = document.getElementById('save-button');
-          const saveBtnText = document.getElementById('save-button-text');
-          const saveBtnSpinner = document.getElementById('save-button-spinner');
-          
-          if (saveBtn) {
-            saveBtn.removeAttribute('disabled');
-            if (saveBtnText) saveBtnText.classList.remove('hidden');
-            if (saveBtnSpinner) saveBtnSpinner.classList.add('hidden');
-          }
-        },
-        
-        async submitRequest() {
-          // Show loading state
-          const submitBtn = document.getElementById('submit-button');
-          const submitBtnText = document.getElementById('submit-button-text');
-          const submitBtnSpinner = document.getElementById('submit-button-spinner');
-          
-          if (submitBtn) {
-            submitBtn.setAttribute('disabled', 'disabled');
-            if (submitBtnText) submitBtnText.classList.add('hidden');
-            if (submitBtnSpinner) submitBtnSpinner.classList.remove('hidden');
-          }
-          
-          const form = document.getElementById('aft-request-form');
-          const formData = new FormData(form);
-          const signatureMethod = formData.get('signature_method');
-          const requestId = formData.get('draft_id');
-          
-          if (!requestId) {
-            alert('Error: Request ID not found. Please refresh the page and try again.');
-            this.resetSubmitButton();
-            return;
-          }
-          
-          // Validate DTA has drive
-          const dtaSelect = document.querySelector('select[name="dta_id"]');
-          if (!dtaSelect || !dtaSelect.value) {
-            alert('Please select a DTA for this request.');
-            this.resetSubmitButton();
-            return;
-          }
-          
-          const selectedDTA = this.dtaData.find(d => d.id.toString() === dtaSelect.value);
-          if (selectedDTA && !selectedDTA.has_drive) {
-            alert('The selected DTA does not have a drive issued. Please contact the Media Custodian or select a different DTA.');
-            this.resetSubmitButton();
-            return;
-          }
-          
-          try {
-            if (signatureMethod === 'manual') {
-              const manualSignature = formData.get('manual_signature');
-              if (!manualSignature || manualSignature.trim() === '') {
-                alert('Please enter your full name to sign the request.');
-                this.resetSubmitButton();
-                return;
-              }
-              
-              await this.submitWithSignature(requestId, 'manual', manualSignature.trim());
-              
-            } else if (signatureMethod === 'cac') {
-              await this.submitWithSignature(requestId, 'cac', null);
-              
-            } else {
-              alert('Please select a signature method.');
-              this.resetSubmitButton();
-            }
-          } catch (error) {
-            console.error('Submit error:', error);
-            alert('Failed to submit request. Please try again.');
-            this.resetSubmitButton();
-          }
-        },
-        
-        resetSubmitButton() {
-          const submitBtn = document.getElementById('submit-button');
-          const submitBtnText = document.getElementById('submit-button-text');
-          const submitBtnSpinner = document.getElementById('submit-button-spinner');
-          
-          if (submitBtn) {
-            submitBtn.removeAttribute('disabled');
-            if (submitBtnText) submitBtnText.classList.remove('hidden');
-            if (submitBtnSpinner) submitBtnSpinner.classList.add('hidden');
-          }
-        },
-        
-        async submitWithSignature(requestId, method, signature) {
-          try {
-            const response = await fetch('/api/requestor/submit-request', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                requestId,
-                signatureMethod: method,
-                manualSignature: signature
-              })
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-              // Show success message
-              const successMsg = document.createElement('div');
-              successMsg.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-              successMsg.textContent = 'Request submitted successfully! Redirecting...';
-              document.body.appendChild(successMsg);
-              
-              // Redirect after short delay
-              setTimeout(() => {
-                window.location.href = '/requestor/requests';
-              }, 1500);
-            } else {
-              alert('Error: ' + (result.message || 'Failed to submit request'));
-              this.resetSubmitButton();
-            }
-          } catch (error) {
-            console.error('Submit signature error:', error);
-            alert('Failed to submit request. Please try again.');
-            this.resetSubmitButton();
-          }
+      let fileRowCount = 1;
+      let destinations = [];
+
+      document.addEventListener('DOMContentLoaded', function() {
+        loadDTAs();
+        const dtaSelect = document.querySelector('select[name="dta_id"]');
+        if (dtaSelect) {
+          dtaSelect.addEventListener('change', function() { validateDTAAndPopulate(); });
         }
-      };
-      
-      // Initialize on DOM ready
-      document.addEventListener('DOMContentLoaded', () => RequestWizard.init());
+
+        const transportRadios = document.querySelectorAll('input[name="media_transportation"]');
+        transportRadios.forEach(function(radio) {
+          radio.addEventListener('change', function() {
+            const details = document.getElementById('transport-details');
+            details.style.display = (this.value === 'true') ? 'block' : 'none';
+          });
+        });
+
+        const controlNumberField = document.querySelector('input[name="media_control_number"]');
+        if (controlNumberField && !controlNumberField.value) {
+          controlNumberField.value = generateControlNumber();
+        }
+
+        if (dtaSelect && dtaSelect.value) {
+          validateDTAAndPopulate();
+        }
+
+        // Initialize destinations list from hidden input
+        try {
+          const initEl = document.getElementById('initial-destinations');
+          if (initEl && initEl.value) {
+            const parsed = JSON.parse(initEl.value);
+            if (Array.isArray(parsed)) {
+              // extras exclude the first (primary) destination
+              const extras = parsed.slice(1).map(function(d){
+                return { is: d?.is || '', classification: d?.classification || '' };
+              });
+              destinations = extras;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse initial destinations');
+        }
+        renderDestinations();
+      });
+
+      function generateControlNumber() {
+        const timestamp = Date.now().toString(36).toUpperCase();
+        const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+        return 'AFT-' + timestamp + '-' + random;
+      }
+
+      async function loadDTAs() {
+        try {
+          const res = await fetch('/api/requestor/dtas');
+          if (!res.ok) return;
+          const dtas = await res.json();
+          const dtaSelect = document.querySelector('select[name="dta_id"]');
+          if (!dtaSelect) return;
+          dtaSelect.innerHTML = '<option value="">Select a DTA</option>';
+          dtas.forEach(function(d) {
+            const opt = document.createElement('option');
+            opt.value = String(d.id);
+            opt.textContent = d.first_name + ' ' + d.last_name + ' (' + d.email + ')';
+            dtaSelect.appendChild(opt);
+          });
+          var currentVal = dtaSelect.getAttribute('value') || dtaSelect.value;
+          if (currentVal) { dtaSelect.value = String(currentVal); }
+        } catch (e) {
+          console.error('Failed to load DTAs', e);
+        }
+      }
+
+      async function validateDTAAndPopulate() {
+        const dtaSelect = document.querySelector('select[name="dta_id"]');
+        if (!dtaSelect || !dtaSelect.value) return;
+        try {
+          const res = await fetch('/api/requestor/dta/' + dtaSelect.value + '/issued-drive');
+          const data = await res.json();
+          if (!data.hasDrive) {
+            alert('The selected DTA does not have a drive issued. Please contact the Media Custodian to issue a drive before proceeding.');
+            disableFormExceptDTA(true);
+            return;
+          }
+          disableFormExceptDTA(false);
+          const controlField = document.querySelector('input[name="media_control_number"]');
+          const mediaTypeSelect = document.querySelector('select[name="media_type"]');
+          if (controlField && data.drive && data.drive.media_control_number) {
+            controlField.value = data.drive.media_control_number;
+          }
+          if (mediaTypeSelect && data.drive && data.drive.type) {
+            mediaTypeSelect.value = data.drive.type;
+          }
+        } catch (e) {
+          console.error('Failed to validate DTA/drive', e);
+        }
+      }
+
+      function disableFormExceptDTA(disabled) {
+        const form = document.getElementById('aft-request-form');
+        if (!form) return;
+        const elements = form.querySelectorAll('input, textarea, select, button');
+        elements.forEach(function(el) {
+          if (el.name === 'dta_id' || el.id === 'edit-button' || el.id === 'save-button' || el.id === 'submit-button') return;
+          if (disabled) {
+            el.setAttribute('disabled', 'disabled');
+            el.style.opacity = '0.6';
+            el.style.pointerEvents = 'none';
+          } else {
+            el.removeAttribute('disabled');
+            el.style.opacity = '1';
+            el.style.pointerEvents = 'auto';
+          }
+        });
+      }
+
+      function addFileRow() {
+        const fileList = document.getElementById('file-list');
+        const newRow = document.createElement('div');
+        newRow.innerHTML = createFileRowHTML(fileRowCount);
+        fileList.appendChild(newRow.firstElementChild);
+        fileRowCount++;
+      }
+
+      function renderDestinations() {
+        const container = document.getElementById('destinations-list');
+        if (!container) return;
+        container.innerHTML = destinations.map(function(dest, idx) {
+          var isVal = (dest && dest.is) ? dest.is : '';
+          var clsVal = (dest && dest.classification) ? dest.classification : '';
+          var options = ['','UNCLASSIFIED','CUI','CONFIDENTIAL','SECRET','TOP SECRET','TOP SECRET//SCI']
+            .map(function(v){
+              var sel = (v === clsVal) ? ' selected' : '';
+              return '<option value="' + v + '"' + sel + '>' + (v || 'Classification') + '</option>';
+            }).join('');
+          return (
+            '<div class="grid grid-cols-1 md:grid-cols-3 gap-2" data-dest-index="' + idx + '">' +
+              '<input type="text" placeholder="Destination IS" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" value="' + isVal + '" oninput="updateDestination(' + idx + ', &quot;is&quot;, this.value)" />' +
+              '<select class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" onchange="updateDestination(' + idx + ', &quot;classification&quot;, this.value)">' + options + '</select>' +
+              '<button type="button" class="px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded" onclick="removeDestination(' + idx + ')">Remove</button>' +
+            '</div>'
+          );
+        }).join('');
+      }
+
+      function addDestination() {
+        destinations.push({ is: '', classification: '' });
+        renderDestinations();
+      }
+
+      function removeDestination(index) {
+        destinations.splice(index, 1);
+        renderDestinations();
+      }
+
+      function updateDestination(index, key, value) {
+        if (!destinations[index]) destinations[index] = { is: '', classification: '' };
+        destinations[index][key] = value;
+      }
+
+      function createFileRowHTML(index) {
+        return \`
+          <div class=\"grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-[var(--background)] border border-[var(--border)] rounded-md\" data-file-index=\"\${index}\">\n
+            <div>\n
+              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">File Name</label>\n
+              <input type=\"text\" name=\"files[\${index}][name]\" placeholder=\"e.g., dataset\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
+            </div>\n
+            <div>\n
+              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Extension</label>\n
+              <input type=\"text\" name=\"files[\${index}][type]\" placeholder=\"e.g., csv\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
+            </div>\n
+            <div>\n
+              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Size</label>\n
+              <input type=\"text\" name=\"files[\${index}][size]\" placeholder=\"e.g., 12 MB\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
+            </div>\n
+            <div class=\"flex items-end gap-2\">\n
+              <div class=\"flex-1\">\n
+                <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Classification</label>\n
+                <select name=\"files[\${index}][classification]\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\">\n
+                  <option value=\"\">Select classification</option>\n
+                  <option value=\"UNCLASSIFIED\">UNCLASSIFIED</option>\n
+                  <option value=\"CUI\">CUI</option>\n
+                  <option value=\"CONFIDENTIAL\">CONFIDENTIAL</option>\n
+                  <option value=\"SECRET\">SECRET</option>\n
+                  <option value=\"TOP SECRET\">TOP SECRET</option>\n
+                  <option value=\"TOP SECRET//SCI\">TOP SECRET//SCI</option>\n
+                </select>\n
+              </div>\n
+              <button type=\"button\" onclick=\"removeFileRow(\${index})\" class=\"px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded\">Remove</button>\n
+            </div>\n
+          </div>\n
+        \`;
+      }
+
+      function removeFileRow(index) {
+        const row = document.querySelector('[data-file-index="' + index + '"]');
+        if (row) { row.remove(); }
+      }
+
+      async function saveDraft() {
+        const form = document.getElementById('aft-request-form');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        const files = [];
+        const fileRows = document.querySelectorAll('[data-file-index]');
+        fileRows.forEach(function(row) {
+          const idx = row.getAttribute('data-file-index');
+          const name = row.querySelector('[name="files[' + idx + '][name]"]')?.value;
+          const type = row.querySelector('[name="files[' + idx + '][type]"]')?.value;
+          const size = row.querySelector('[name="files[' + idx + '][size]"]')?.value;
+          const classification = row.querySelector('[name="files[' + idx + '][classification]"]')?.value;
+          if (name && classification) { files.push({ name: name, type: type || '', size: size || '', classification: classification }); }
+        });
+        data.files = JSON.stringify(files);
+        // compose destinations as [primary, ...extras]
+        const primaryIsEl = document.querySelector('input[name="destination_is"]');
+        const primaryClsEl = document.querySelector('select[name="destination_classification"]');
+        const primary = { is: (primaryIsEl?.value || ''), classification: (primaryClsEl?.value || '') };
+        const allDest = [primary].concat(destinations.map(function(d){ return { is: d.is || '', classification: d.classification || '' }; }));
+        const destField = document.getElementById('destinations_json');
+        if (destField) { destField.value = JSON.stringify(allDest); }
+        data.destinations_json = destField ? destField.value : JSON.stringify(allDest);
+        data.status = 'draft';
+        const response = await fetch('/api/requestor/save-draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.requestId && !data.draft_id) {
+            window.history.pushState({}, '', '/requestor/new-request?draft=' + result.requestId);
+            const draftIdEl = document.querySelector('input[name="draft_id"]');
+            if (draftIdEl) draftIdEl.value = result.requestId;
+          }
+        } else {
+          alert('Failed to save draft. Please try again.');
+        }
+      }
+
+      function toggleEditMode() {
+        editMode = !editMode;
+        const formElements = document.querySelectorAll('input, textarea, select, button[onclick*="addFileRow"], button[onclick*="removeFileRow"]');
+        const editButton = document.getElementById('edit-button');
+        const saveButton = document.getElementById('save-button');
+        formElements.forEach(function(element) {
+          if (element.id === 'edit-button' || element.id === 'save-button' || element.id === 'submit-button') { return; }
+          if (editMode) {
+            element.removeAttribute('disabled'); element.style.opacity = '1'; element.style.pointerEvents = 'auto';
+          } else {
+            element.setAttribute('disabled', 'disabled'); element.style.opacity = '0.6'; element.style.pointerEvents = 'none';
+          }
+        });
+        if (editButton) { editButton.textContent = editMode ? 'View Only' : 'Edit'; }
+        if (saveButton) { saveButton.style.display = editMode ? 'inline-block' : 'none'; }
+      }
+
+      async function saveAndClose() {
+        try { await saveDraft(); window.location.href = '/requestor/requests'; }
+        catch (e) { console.error('Failed to save and close', e); alert('Failed to save. Please try again.'); }
+      }
     `;
   }
 }
