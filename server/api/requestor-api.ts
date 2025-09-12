@@ -9,18 +9,19 @@ const db = getDb();
 export async function handleRequestorAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   const method = request.method;
   
-  // List available DTAs (users with DTA role who have available drives)
+  // List all DTAs with drive status indicator
   if (path === '/api/requestor/dtas' && method === 'GET') {
     // Allow any authenticated user to access requestor APIs
     const authResult = await RoleMiddleware.checkAuth(request, ipAddress);
     if (authResult.response) return authResult.response;
     try {
       const dtas = db.query(`
-        SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
+        SELECT DISTINCT u.id, u.email, u.first_name, u.last_name,
+          CASE WHEN md.id IS NOT NULL THEN 1 ELSE 0 END as has_drive
         FROM users u
         JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
-        JOIN media_drives md ON md.issued_to_user_id = u.id
-        WHERE u.is_active = 1 AND ur.role = ? AND md.status = 'issued'
+        LEFT JOIN media_drives md ON md.issued_to_user_id = u.id AND md.status = 'issued'
+        WHERE u.is_active = 1 AND ur.role = ?
         ORDER BY u.last_name, u.first_name
       `).all(UserRole.DTA) as any[];
       return new Response(JSON.stringify(dtas), { headers: { 'Content-Type': 'application/json' } });

@@ -1,9 +1,8 @@
-// AFT Request Creation Wizard - Sections I & II from ACDS Form v1.3
+// AFT Request Creation Wizard - Refactored Version
 import { ComponentBuilder } from "../components/ui/server-components";
 import { FormComponents } from "../components/ui/form-components";
 import { RequestorNavigation, type RequestorUser } from "./requestor-nav";
 import { getDb, generateRequestNumber, type AFTRequest } from "../lib/database-bun";
-import { CACPinModal } from "../components/cac-pin-modal";
 
 export interface AFTRequestDraft {
   // Section I
@@ -54,6 +53,17 @@ export class RequestWizard {
       }
     }
 
+    // Load ALL DTAs immediately for the form
+    const allDTAs = db.query(`
+      SELECT DISTINCT u.id, u.email, u.first_name, u.last_name,
+        CASE WHEN md.id IS NOT NULL THEN 1 ELSE 0 END as has_drive
+      FROM users u
+      JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
+      LEFT JOIN media_drives md ON md.issued_to_user_id = u.id AND md.status = 'issued'
+      WHERE u.is_active = 1 AND ur.role = 'DTA'
+      ORDER BY u.last_name, u.first_name
+    `).all() as any[];
+
     // Status indicator
     const statusIndicator = existingDraft ? `
       <div class="mb-6 p-4 bg-[var(--muted)] rounded-lg border border-[var(--border)]">
@@ -83,6 +93,12 @@ export class RequestWizard {
       }
     })();
 
+    // Generate DTA options with drive status indicator
+    const dtaOptions = allDTAs.map(dta => ({
+      value: dta.id.toString(),
+      label: `${dta.first_name} ${dta.last_name} (${dta.email})${dta.has_drive ? '' : ' - ⚠️ No Drive Issued'}`
+    }));
+
     // Section I - Media Information
     const sectionI = `
       ${FormComponents.sectionHeader({
@@ -104,9 +120,13 @@ export class RequestWizard {
                 value: existingDraft?.dta_id?.toString() || '',
                 placeholder: 'Select a DTA',
                 required: true,
-                options: []
+                options: dtaOptions
               })
             })}
+            
+            <div id="dta-warning" class="hidden col-span-2 p-3 bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-md">
+              <p class="text-sm text-[var(--warning)]">⚠️ Selected DTA does not have a drive issued. Contact Media Custodian.</p>
+            </div>
             
             ${FormComponents.formField({
               label: 'Media Control Number',
@@ -148,7 +168,7 @@ export class RequestWizard {
       </div>
     `;
 
-    // Section II - Transfer Details
+    // Section II - Transfer Details (unchanged)
     const sectionII = `
       ${FormComponents.sectionHeader({
         title: 'Transfer Details',
@@ -229,7 +249,7 @@ export class RequestWizard {
         <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4 space-y-3">
           <div class="flex items-center justify-between">
             <h4 class="text-sm font-medium text-[var(--foreground)]">Additional Destinations</h4>
-            <button type="button" class="action-btn secondary" onclick="addDestination()">+ Add Destination</button>
+            <button type="button" class="action-btn secondary" onclick="RequestWizard.addDestination()">+ Add Destination</button>
           </div>
           <div id="destinations-list" class="space-y-2"></div>
           <p class="text-xs text-[var(--muted-foreground)]">Add any additional destination systems and their classification.</p>
@@ -441,66 +461,51 @@ export class RequestWizard {
       </div>
     `;
 
-    // Signature Section for Submission
+    // Simplified Signature Section
     const signatureSection = existingDraft ? `
       ${FormComponents.sectionHeader({
         title: 'Digital Signature & Submission',
-        subtitle: 'Choose your signature method and submit the request',
+        subtitle: 'Sign and submit your request',
         sectionNumber: 'III'
       })}
       
       <div class="space-y-6">
         <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
-          <h3 class="text-sm font-semibold text-[var(--foreground)]">Signature Method</h3>
-          <p class="text-sm text-[var(--muted-foreground)]">
-            Select how you want to digitally sign this AFT request. CAC signature provides the highest level of authentication and is preferred for DOD operations.
-          </p>
+          <h3 class="text-sm font-semibold text-[var(--foreground)]">Certification & Signature</h3>
+          
+          <div class="text-sm text-[var(--muted-foreground)] mb-4 p-3 bg-[var(--card)] rounded border-l-4 border-[var(--primary)]">
+            "I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts and comply with all applicable security requirements."
+          </div>
           
           ${FormComponents.formField({
             label: 'Choose Signature Method',
             required: true,
             children: FormComponents.radioGroup({
               name: 'signature_method',
-              value: existingDraft?.signature_method || 'manual',
+              value: 'manual',
               options: [
-                { value: 'manual', label: 'Manual Signature' },
-                { value: 'cac', label: 'CAC Certificate Signature' }
+                { value: 'manual', label: 'Type Name (Manual Signature)' },
+                { value: 'cac', label: 'CAC Certificate (Automatic via HTTPS)' }
               ]
             })
           })}
           
-          <!-- Manual Signature Area -->
-          <div id="manual-signature-area" class="space-y-4" style="display: ${existingDraft?.signature_method === 'cac' ? 'none' : 'block'}">
-            <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4">
-              <h4 class="text-sm font-medium text-[var(--foreground)] mb-3">Certification Statement</h4>
-              <div class="text-sm text-[var(--muted-foreground)] mb-4 p-3 bg-[var(--muted)] rounded border-l-4 border-[var(--primary)]">
-                "I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts and comply with all applicable security requirements."
-              </div>
-              
-              ${FormComponents.formField({
-                label: 'Type your full name to confirm certification',
-                required: true,
-                children: FormComponents.textInput({
-                  name: 'manual_signature',
-                  value: existingDraft?.manual_signature || '',
-                  placeholder: 'Type your full name here'
-                })
-              })}
-            </div>
+          <div id="manual-signature-area" class="mt-4">
+            ${FormComponents.formField({
+              label: 'Type your full name to confirm certification',
+              required: true,
+              children: FormComponents.textInput({
+                name: 'manual_signature',
+                value: '',
+                placeholder: 'Type your full name here'
+              })
+            })}
           </div>
           
-          <!-- CAC Signature Area -->
-          <div id="cac-signature-area" class="space-y-4" style="display: ${existingDraft?.signature_method === 'cac' ? 'block' : 'none'}">
-            <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4">
-              <h4 class="text-sm font-medium text-[var(--foreground)] mb-3">CAC Digital Signature</h4>
-              <div class="text-sm text-[var(--muted-foreground)] mb-4">
-                Your CAC certificate will be used to digitally sign this request. The browser will prompt you to select your certificate and enter your PIN.
-              </div>
-              
-              <div class="flex items-center gap-3 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
-                <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
-                <span class="text-sm text-[var(--info)]">Server-level CAC authentication - no additional setup required</span>
-              </div>
+          <div id="cac-signature-area" class="mt-4 hidden">
+            <div class="flex items-center gap-3 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
+              <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
+              <span class="text-sm text-[var(--info)]">CAC authentication via HTTPS - certificate will be validated on submission</span>
             </div>
           </div>
         </div>
@@ -508,17 +513,17 @@ export class RequestWizard {
     ` : `
       ${FormComponents.sectionHeader({
         title: 'Digital Signature & Submission',
-        subtitle: 'Sign & submit is available after you save your draft',
+        subtitle: 'Save your draft first to enable signing',
         sectionNumber: 'III'
       })}
       <div class="bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-md p-4">
         <div class="text-sm text-[var(--warning)]">
-          You must save this request as a draft before signing and submitting. Click "Save Draft", then reopen the request to review and sign.
+          Save this request as a draft first, then reopen to sign and submit.
         </div>
       </div>
     `;
 
-    // Form actions based on status
+    // Form actions
     const formActions = `
       <div class="flex justify-between items-center pt-6 border-t border-[var(--border)]">
         <button
@@ -530,20 +535,9 @@ export class RequestWizard {
         </button>
         
         <div class="flex space-x-3">
-          ${existingDraft && existingDraft.status !== 'draft' ? `
-            <button
-              type="button"
-              onclick="toggleEditMode()"
-              id="edit-button"
-              class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors"
-            >
-              Edit
-            </button>
-          ` : ''}
-          
           <button
             type="button"
-            onclick="saveDraft()"
+            onclick="RequestWizard.saveDraft()"
             id="save-button"
             class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors"
           >
@@ -552,7 +546,7 @@ export class RequestWizard {
           
           <button
             type="button"
-            onclick="submitRequest()"
+            onclick="RequestWizard.submitRequest()"
             id="submit-button"
             class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors"
             ${existingDraft ? '' : 'disabled'}
@@ -571,6 +565,7 @@ export class RequestWizard {
           <input type="hidden" name="requestor_id" value="${userId}" />
           <input type="hidden" id="initial-destinations" value='${initialDestinationsJson.replace(/'/g, "&#39;").replace(/</g, "&lt;")}' />
           <input type="hidden" name="destinations_json" id="destinations_json" value='' />
+          <input type="hidden" id="dta-data" value='${JSON.stringify(allDTAs).replace(/'/g, "&#39;").replace(/</g, "&lt;")}' />
 
           <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6 space-y-8" id="form-container">
             ${sectionI}
@@ -580,6 +575,7 @@ export class RequestWizard {
           </div>
         </form>
         
+        <script>${RequestWizard.getScript()}</script>
     `;
 
     return RequestorNavigation.renderLayout(
@@ -591,448 +587,296 @@ export class RequestWizard {
     );
   }
 
-  private static renderWizardSteps(draft: any): string {
-    // This will be expanded to show progress
-    return `
-      <div class="p-6 border-b border-[var(--border)]">
-        <h2 class="text-2xl font-bold text-gray-800">Assured File Transfer Request</h2>
-        <p class="text-sm text-gray-500">A step-by-step guide to submitting your request</p>
-      </div>
-    `;
-  }
-
-  private static renderWizardContent(draft: any): string {
-    const step1 = `
-      <div id="step-1" class="wizard-step">
-        ${FormComponents.sectionHeader({ title: 'Getting Started', subtitle: 'Provide the basic details for your transfer request.', sectionNumber: '1' })}
-        <div class="space-y-6 mt-6">
-          ${FormComponents.formField({ label: 'Justification for Transfer', required: true, description: 'In plain language, please explain the business need for this transfer.', children: FormComponents.textarea({ name: 'justification', value: draft?.transfer_purpose || '', rows: 4, required: true, placeholder: 'e.g., Sharing project deliverables with an external partner...' }) })}
-          ${FormComponents.formField({ label: 'Overall Classification', required: true, description: 'Select the highest classification level of any data being transferred.', children: FormComponents.select({ name: 'overall_classification', value: draft?.classification || '', required: true, options: [{ value: '', label: 'Select a classification...' }, { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' }, { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' }, { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' }, { value: 'SECRET', label: 'SECRET' }, { value: 'TOP SECRET', label: 'TOP SECRET' }, { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }] }) })}
-        </div>
-      </div>
-    `;
-
-    const step2 = `
-      <div id="step-2" class="wizard-step" style="display: none;">
-        ${FormComponents.sectionHeader({ title: 'Source & Destination', subtitle: 'Specify where the data is coming from and where it is going.', sectionNumber: '2' })}
-        <div class="space-y-6 mt-6">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            ${FormComponents.formField({ label: 'Source System', required: true, description: 'The name of the system where the data originates.', children: FormComponents.textInput({ name: 'source_is', value: draft?.source_system || '', required: true, maxLength: 100 }) })}
-            ${FormComponents.formField({ label: 'Source Classification', required: true, children: FormComponents.select({ name: 'source_classification', value: draft?.source_classification || '', required: true, options: [{ value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' }, { value: 'CUI', label: 'CUI' }, { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' }, { value: 'SECRET', label: 'SECRET' }, { value: 'TOP SECRET', label: 'TOP SECRET' }, { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }] }) })}
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            ${FormComponents.formField({ label: 'Destination System', required: true, description: 'The name of the system receiving the data.', children: FormComponents.textInput({ name: 'destination_is', value: draft?.dest_system || '', required: true, maxLength: 100 }) })}
-            ${FormComponents.formField({ label: 'Destination Classification', required: true, children: FormComponents.select({ name: 'destination_classification', value: draft?.destination_classification || '', required: true, options: [{ value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' }, { value: 'CUI', label: 'CUI' }, { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' }, { value: 'SECRET', label: 'SECRET' }, { value: 'TOP SECRET', label: 'TOP SECRET' }, { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }] }) })}
-          </div>
-        </div>
-      </div>
-    `;
-
-    const step3 = `
-      <div id="step-3" class="wizard-step" style="display: none;">
-        ${FormComponents.sectionHeader({ title: 'Files & Media', subtitle: 'Detail the files being transferred and the media used.', sectionNumber: '3' })}
-        <div class="space-y-6 mt-6">
-          ${FormComponents.formField({ label: 'Number of Files', required: true, children: FormComponents.textInput({ name: 'num_files', value: draft?.num_files?.toString() || '', required: true }) })}
-          ${FormComponents.formField({ label: 'Media Type', required: true, description: 'Type of media being used for transfer.', children: FormComponents.select({ name: 'media_type', value: draft?.media_type || '', required: true, options: [{ value: 'SSD', label: 'SSD' }, { value: 'DVD', label: 'DVD' }, { value: 'CD', label: 'CD' }] }) })}
-        </div>
-      </div>
-    `;
-
-    return step1 + step2 + step3;
-  }
-
   static getScript(): string {
     return `
-      let editMode = true;
-      let fileRowCount = 1;
-      let destinations = [];
-
-      document.addEventListener('DOMContentLoaded', function() {
-        loadDTAs();
-        const dtaSelect = document.querySelector('select[name="dta_id"]');
-        if (dtaSelect) {
-          dtaSelect.addEventListener('change', function() { validateDTAAndPopulate(); });
-        }
-
-        const transportRadios = document.querySelectorAll('input[name="media_transportation"]');
-        transportRadios.forEach(function(radio) {
-          radio.addEventListener('change', function() {
-            const details = document.getElementById('transport-details');
-            details.style.display = (this.value === 'true') ? 'block' : 'none';
-          });
-        });
-
-        // Signature method change handler
-        const signatureRadios = document.querySelectorAll('input[name="signature_method"]');
-        signatureRadios.forEach(function(radio) {
-          radio.addEventListener('change', function() {
-            const manualArea = document.getElementById('manual-signature-area');
-            const cacArea = document.getElementById('cac-signature-area');
-            
-            if (this.value === 'manual') {
-              manualArea.style.display = 'block';
-              cacArea.style.display = 'none';
-            } else if (this.value === 'cac') {
-              manualArea.style.display = 'none';
-              cacArea.style.display = 'block';
-            }
-          });
-        });
-
-        const controlNumberField = document.querySelector('input[name="media_control_number"]');
-        if (controlNumberField && !controlNumberField.value) {
-          controlNumberField.value = generateControlNumber();
-        }
-
-        if (dtaSelect && dtaSelect.value) {
-          validateDTAAndPopulate();
-        }
-
-        // Initialize destinations list from hidden input
-        try {
-          const initEl = document.getElementById('initial-destinations');
-          if (initEl && initEl.value) {
-            const parsed = JSON.parse(initEl.value);
-            if (Array.isArray(parsed)) {
-              // extras exclude the first (primary) destination
-              const extras = parsed.slice(1).map(function(d){
-                return { is: d?.is || '', classification: d?.classification || '' };
-              });
-              destinations = extras;
+      // Refactored Request Wizard Script
+      window.RequestWizard = {
+        destinations: [],
+        dtaData: [],
+        
+        init() {
+          // Parse DTA data from hidden field
+          const dtaDataEl = document.getElementById('dta-data');
+          if (dtaDataEl) {
+            try {
+              this.dtaData = JSON.parse(dtaDataEl.value);
+            } catch (e) {
+              console.error('Failed to parse DTA data');
             }
           }
-        } catch (e) {
-          console.warn('Failed to parse initial destinations');
-        }
-        renderDestinations();
-      });
-
-      function generateControlNumber() {
-        const timestamp = Date.now().toString(36).toUpperCase();
-        const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-        return 'AFT-' + timestamp + '-' + random;
-      }
-
-      async function loadDTAs() {
-        try {
-          const res = await fetch('/api/requestor/dtas');
-          if (!res.ok) return;
-          const dtas = await res.json();
+          
+          // Initialize destinations from existing data
+          try {
+            const initEl = document.getElementById('initial-destinations');
+            if (initEl && initEl.value) {
+              const parsed = JSON.parse(initEl.value);
+              if (Array.isArray(parsed)) {
+                // Skip the first (primary) destination
+                this.destinations = parsed.slice(1).map(d => ({
+                  is: d?.is || '',
+                  classification: d?.classification || ''
+                }));
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse initial destinations');
+          }
+          
+          this.renderDestinations();
+          this.setupEventListeners();
+          this.generateControlNumber();
+          this.validateDTA();
+        },
+        
+        setupEventListeners() {
+          // DTA selection change
           const dtaSelect = document.querySelector('select[name="dta_id"]');
-          if (!dtaSelect) return;
-          dtaSelect.innerHTML = '<option value="">Select a DTA</option>';
-          dtas.forEach(function(d) {
-            const opt = document.createElement('option');
-            opt.value = String(d.id);
-            opt.textContent = d.first_name + ' ' + d.last_name + ' (' + d.email + ')';
-            dtaSelect.appendChild(opt);
+          if (dtaSelect) {
+            dtaSelect.addEventListener('change', () => this.validateDTA());
+          }
+          
+          // Media transportation toggle
+          const transportRadios = document.querySelectorAll('input[name="media_transportation"]');
+          transportRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+              const details = document.getElementById('transport-details');
+              if (details) {
+                details.style.display = this.value === 'true' ? 'block' : 'none';
+              }
+            });
           });
-          var currentVal = dtaSelect.getAttribute('value') || dtaSelect.value;
-          if (currentVal) { dtaSelect.value = String(currentVal); }
-        } catch (e) {
-          console.error('Failed to load DTAs', e);
-        }
-      }
-
-      async function validateDTAAndPopulate() {
-        const dtaSelect = document.querySelector('select[name="dta_id"]');
-        if (!dtaSelect || !dtaSelect.value) return;
-        try {
-          const res = await fetch('/api/requestor/dta/' + dtaSelect.value + '/issued-drive');
-          const data = await res.json();
-          if (!data.hasDrive) {
-            alert('The selected DTA does not have a drive issued. Please contact the Media Custodian to issue a drive before proceeding.');
-            disableFormExceptDTA(true);
-            return;
-          }
-          disableFormExceptDTA(false);
+          
+          // Signature method toggle
+          const signatureRadios = document.querySelectorAll('input[name="signature_method"]');
+          signatureRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+              const manualArea = document.getElementById('manual-signature-area');
+              const cacArea = document.getElementById('cac-signature-area');
+              
+              if (this.value === 'manual') {
+                if (manualArea) manualArea.classList.remove('hidden');
+                if (cacArea) cacArea.classList.add('hidden');
+              } else if (this.value === 'cac') {
+                if (manualArea) manualArea.classList.add('hidden');
+                if (cacArea) cacArea.classList.remove('hidden');
+              }
+            });
+          });
+        },
+        
+        generateControlNumber() {
           const controlField = document.querySelector('input[name="media_control_number"]');
-          const mediaTypeSelect = document.querySelector('select[name="media_type"]');
-          if (controlField && data.drive && data.drive.media_control_number) {
-            controlField.value = data.drive.media_control_number;
+          if (controlField && !controlField.value) {
+            const timestamp = Date.now().toString(36).toUpperCase();
+            const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+            controlField.value = 'AFT-' + timestamp + '-' + random;
           }
-          if (mediaTypeSelect && data.drive && data.drive.type) {
-            mediaTypeSelect.value = data.drive.type;
-          }
-        } catch (e) {
-          console.error('Failed to validate DTA/drive', e);
-        }
-      }
-
-      function disableFormExceptDTA(disabled) {
-        const form = document.getElementById('aft-request-form');
-        if (!form) return;
-        const elements = form.querySelectorAll('input, textarea, select, button');
-        elements.forEach(function(el) {
-          if (el.name === 'dta_id' || el.id === 'edit-button' || el.id === 'save-button' || el.id === 'submit-button') return;
-          if (disabled) {
-            el.setAttribute('disabled', 'disabled');
-            el.style.opacity = '0.6';
-            el.style.pointerEvents = 'none';
-          } else {
-            el.removeAttribute('disabled');
-            el.style.opacity = '1';
-            el.style.pointerEvents = 'auto';
-          }
-        });
-      }
-
-      function addFileRow() {
-        const fileList = document.getElementById('file-list');
-        const newRow = document.createElement('div');
-        newRow.innerHTML = createFileRowHTML(fileRowCount);
-        fileList.appendChild(newRow.firstElementChild);
-        fileRowCount++;
-      }
-
-      function renderDestinations() {
-        const container = document.getElementById('destinations-list');
-        if (!container) return;
-        container.innerHTML = destinations.map(function(dest, idx) {
-          var isVal = (dest && dest.is) ? dest.is : '';
-          var clsVal = (dest && dest.classification) ? dest.classification : '';
-          var options = ['','UNCLASSIFIED','CUI','CONFIDENTIAL','SECRET','TOP SECRET','TOP SECRET//SCI']
-            .map(function(v){
-              var sel = (v === clsVal) ? ' selected' : '';
-              return '<option value="' + v + '"' + sel + '>' + (v || 'Classification') + '</option>';
-            }).join('');
-          return (
-            '<div class="grid grid-cols-1 md:grid-cols-3 gap-2" data-dest-index="' + idx + '">' +
-              '<input type="text" placeholder="Destination IS" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" value="' + isVal + '" oninput="updateDestination(' + idx + ', &quot;is&quot;, this.value)" />' +
-              '<select class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" onchange="updateDestination(' + idx + ', &quot;classification&quot;, this.value)">' + options + '</select>' +
-              '<button type="button" class="px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded" onclick="removeDestination(' + idx + ')">Remove</button>' +
-            '</div>'
-          );
-        }).join('');
-      }
-
-      function addDestination() {
-        destinations.push({ is: '', classification: '' });
-        renderDestinations();
-      }
-
-      function removeDestination(index) {
-        destinations.splice(index, 1);
-        renderDestinations();
-      }
-
-      function updateDestination(index, key, value) {
-        if (!destinations[index]) destinations[index] = { is: '', classification: '' };
-        destinations[index][key] = value;
-      }
-
-      function createFileRowHTML(index) {
-        return \`
-          <div class=\"grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-[var(--background)] border border-[var(--border)] rounded-md\" data-file-index=\"\${index}\">\n
-            <div>\n
-              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">File Name</label>\n
-              <input type=\"text\" name=\"files[\${index}][name]\" placeholder=\"e.g., dataset\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
-            </div>\n
-            <div>\n
-              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Extension</label>\n
-              <input type=\"text\" name=\"files[\${index}][type]\" placeholder=\"e.g., csv\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
-            </div>\n
-            <div>\n
-              <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Size</label>\n
-              <input type=\"text\" name=\"files[\${index}][size]\" placeholder=\"e.g., 12 MB\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\" />\n
-            </div>\n
-            <div class=\"flex items-end gap-2\">\n
-              <div class=\"flex-1\">\n
-                <label class=\"block text-xs font-medium text-[var(--foreground)] mb-1\">Classification</label>\n
-                <select name=\"files[\${index}][classification]\" class=\"block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]\">\n
-                  <option value=\"\">Select classification</option>\n
-                  <option value=\"UNCLASSIFIED\">UNCLASSIFIED</option>\n
-                  <option value=\"CUI\">CUI</option>\n
-                  <option value=\"CONFIDENTIAL\">CONFIDENTIAL</option>\n
-                  <option value=\"SECRET\">SECRET</option>\n
-                  <option value=\"TOP SECRET\">TOP SECRET</option>\n
-                  <option value=\"TOP SECRET//SCI\">TOP SECRET//SCI</option>\n
-                </select>\n
-              </div>\n
-              <button type=\"button\" onclick=\"removeFileRow(\${index})\" class=\"px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded\">Remove</button>\n
-            </div>\n
-          </div>\n
-        \`;
-      }
-
-      function removeFileRow(index) {
-        const row = document.querySelector('[data-file-index="' + index + '"]');
-        if (row) { row.remove(); }
-      }
-
-      async function saveDraft() {
-        const form = document.getElementById('aft-request-form');
-        const formData = new FormData(form);
-        const data = Object.fromEntries(formData.entries());
-        const files = [];
-        const fileRows = document.querySelectorAll('[data-file-index]');
-        fileRows.forEach(function(row) {
-          const idx = row.getAttribute('data-file-index');
-          const name = row.querySelector('[name="files[' + idx + '][name]"]')?.value;
-          const type = row.querySelector('[name="files[' + idx + '][type]"]')?.value;
-          const size = row.querySelector('[name="files[' + idx + '][size]"]')?.value;
-          const classification = row.querySelector('[name="files[' + idx + '][classification]"]')?.value;
-          if (name && classification) { files.push({ name: name, type: type || '', size: size || '', classification: classification }); }
-        });
-        data.files = JSON.stringify(files);
-        // compose destinations as [primary, ...extras]
-        const primaryIsEl = document.querySelector('input[name="destination_is"]');
-        const primaryClsEl = document.querySelector('select[name="destination_classification"]');
-        const primary = { is: (primaryIsEl?.value || ''), classification: (primaryClsEl?.value || '') };
-        const allDest = [primary].concat(destinations.map(function(d){ return { is: d.is || '', classification: d.classification || '' }; }));
-        const destField = document.getElementById('destinations_json');
-        if (destField) { destField.value = JSON.stringify(allDest); }
-        data.destinations_json = destField ? destField.value : JSON.stringify(allDest);
-        data.status = 'draft';
-        const response = await fetch('/api/requestor/save-draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-        if (response.ok) {
-          const result = await response.json();
-          const draftId = result.requestId || data.draft_id;
-          if (draftId) {
-            window.location.href = '/requestor/new-request?draft=' + draftId;
+        },
+        
+        async validateDTA() {
+          const dtaSelect = document.querySelector('select[name="dta_id"]');
+          const warningDiv = document.getElementById('dta-warning');
+          
+          if (!dtaSelect || !dtaSelect.value) {
+            if (warningDiv) warningDiv.classList.add('hidden');
             return;
           }
-        } else {
-          alert('Failed to save draft. Please try again.');
-        }
-      }
-
-      function toggleEditMode() {
-        editMode = !editMode;
-        const formElements = document.querySelectorAll('input, textarea, select, button[onclick*="addFileRow"], button[onclick*="removeFileRow"]');
-        const editButton = document.getElementById('edit-button');
-        const saveButton = document.getElementById('save-button');
-        formElements.forEach(function(element) {
-          if (element.id === 'edit-button' || element.id === 'save-button' || element.id === 'submit-button') { return; }
-          if (editMode) {
-            element.removeAttribute('disabled'); element.style.opacity = '1'; element.style.pointerEvents = 'auto';
+          
+          const selectedDTA = this.dtaData.find(d => d.id.toString() === dtaSelect.value);
+          
+          if (selectedDTA && !selectedDTA.has_drive) {
+            // Show warning but don't disable form
+            if (warningDiv) warningDiv.classList.remove('hidden');
           } else {
-            element.setAttribute('disabled', 'disabled'); element.style.opacity = '0.6'; element.style.pointerEvents = 'none';
+            if (warningDiv) warningDiv.classList.add('hidden');
+            
+            // Try to fetch drive details
+            try {
+              const res = await fetch('/api/requestor/dta/' + dtaSelect.value + '/issued-drive');
+              const data = await res.json();
+              
+              if (data.hasDrive && data.drive) {
+                const controlField = document.querySelector('input[name="media_control_number"]');
+                const mediaTypeSelect = document.querySelector('select[name="media_type"]');
+                
+                if (controlField && data.drive.media_control_number) {
+                  controlField.value = data.drive.media_control_number;
+                }
+                if (mediaTypeSelect && data.drive.type) {
+                  mediaTypeSelect.value = data.drive.type;
+                }
+              }
+            } catch (e) {
+              console.error('Failed to fetch drive details', e);
+            }
           }
-        });
-        if (editButton) { editButton.textContent = editMode ? 'View Only' : 'Edit'; }
-        if (saveButton) { saveButton.style.display = editMode ? 'inline-block' : 'none'; }
-      }
-
-      async function saveAndClose() {
-        try { await saveDraft(); window.location.href = '/requestor/requests'; }
-        catch (e) { console.error('Failed to save and close', e); alert('Failed to save. Please try again.'); }
-      }
-
-      // Simple submit function that handles both manual and CAC signatures
-      async function submitRequest() {
-        try {
+        },
+        
+        renderDestinations() {
+          const container = document.getElementById('destinations-list');
+          if (!container) return;
+          
+          container.innerHTML = this.destinations.map((dest, idx) => {
+            const isVal = dest?.is || '';
+            const clsVal = dest?.classification || '';
+            const options = ['', 'UNCLASSIFIED', 'CUI', 'CONFIDENTIAL', 'SECRET', 'TOP SECRET', 'TOP SECRET//SCI']
+              .map(v => {
+                const selected = v === clsVal ? ' selected' : '';
+                return '<option value="' + v + '"' + selected + '>' + (v || 'Select Classification') + '</option>';
+              }).join('');
+              
+            return (
+              '<div class="grid grid-cols-1 md:grid-cols-3 gap-2" data-dest-index="' + idx + '">' +
+                '<input type="text" placeholder="Destination IS" class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" value="' + isVal + '" oninput="RequestWizard.updateDestination(' + idx + ', \\'is\\', this.value)" />' +
+                '<select class="block w-full text-xs rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)] focus:border-[var(--primary)]" onchange="RequestWizard.updateDestination(' + idx + ', \\'classification\\', this.value)">' + options + '</select>' +
+                '<button type="button" class="px-2 py-1 text-xs text-[var(--destructive)] hover:bg-[var(--destructive)]/10 rounded" onclick="RequestWizard.removeDestination(' + idx + ')">Remove</button>' +
+              '</div>'
+            );
+          }).join('');
+        },
+        
+        addDestination() {
+          this.destinations.push({ is: '', classification: '' });
+          this.renderDestinations();
+        },
+        
+        removeDestination(index) {
+          this.destinations.splice(index, 1);
+          this.renderDestinations();
+        },
+        
+        updateDestination(index, key, value) {
+          if (!this.destinations[index]) {
+            this.destinations[index] = { is: '', classification: '' };
+          }
+          this.destinations[index][key] = value;
+        },
+        
+        async saveDraft() {
+          const form = document.getElementById('aft-request-form');
+          const formData = new FormData(form);
+          const data = Object.fromEntries(formData.entries());
+          
+          // Collect files
+          const files = [];
+          const fileRows = document.querySelectorAll('[data-file-index]');
+          fileRows.forEach(row => {
+            const idx = row.getAttribute('data-file-index');
+            const name = row.querySelector('[name="files[' + idx + '][name]"]')?.value;
+            const type = row.querySelector('[name="files[' + idx + '][type]"]')?.value;
+            const size = row.querySelector('[name="files[' + idx + '][size]"]')?.value;
+            const classification = row.querySelector('[name="files[' + idx + '][classification]"]')?.value;
+            
+            if (name && classification) {
+              files.push({ name, type: type || '', size: size || '', classification });
+            }
+          });
+          
+          data.files = JSON.stringify(files);
+          
+          // Compose destinations
+          const primaryIs = document.querySelector('input[name="destination_is"]')?.value || '';
+          const primaryCls = document.querySelector('select[name="destination_classification"]')?.value || '';
+          const allDestinations = [
+            { is: primaryIs, classification: primaryCls },
+            ...this.destinations
+          ];
+          
+          data.destinations_json = JSON.stringify(allDestinations);
+          data.status = 'draft';
+          
+          try {
+            const response = await fetch('/api/requestor/save-draft', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+              const result = await response.json();
+              const draftId = result.requestId || data.draft_id;
+              if (draftId) {
+                window.location.href = '/requestor/new-request?draft=' + draftId;
+              }
+            } else {
+              alert('Failed to save draft. Please try again.');
+            }
+          } catch (e) {
+            console.error('Save draft error:', e);
+            alert('Failed to save draft. Please try again.');
+          }
+        },
+        
+        async submitRequest() {
           const form = document.getElementById('aft-request-form');
           const formData = new FormData(form);
           const signatureMethod = formData.get('signature_method');
           const requestId = formData.get('draft_id');
-
+          
           if (!requestId) {
-            alert('This request must be saved as a draft before signing. Click "Save Draft" first.');
+            alert('Please save the draft first before submitting.');
             return;
           }
-
-          if (signatureMethod === 'manual') {
-            // Use manual signature flow
-            const manualSignature = formData.get('manual_signature');
-            if (!manualSignature || manualSignature.trim() === '') {
-              alert('Please enter your full name to confirm the certification.');
-              const el = document.querySelector('input[name="manual_signature"]'); if (el) (el as HTMLInputElement).focus();
-              return;
+          
+          // Validate DTA has drive
+          const dtaSelect = document.querySelector('select[name="dta_id"]');
+          if (!dtaSelect || !dtaSelect.value) {
+            alert('Please select a DTA for this request.');
+            return;
+          }
+          
+          const selectedDTA = this.dtaData.find(d => d.id.toString() === dtaSelect.value);
+          if (selectedDTA && !selectedDTA.has_drive) {
+            alert('The selected DTA does not have a drive issued. Please contact the Media Custodian or select a different DTA.');
+            return;
+          }
+          
+          try {
+            if (signatureMethod === 'manual') {
+              const manualSignature = formData.get('manual_signature');
+              if (!manualSignature || manualSignature.trim() === '') {
+                alert('Please enter your full name to sign the request.');
+                return;
+              }
+              
+              await this.submitWithSignature(requestId, 'manual', manualSignature.trim());
+              
+            } else if (signatureMethod === 'cac') {
+              await this.submitWithSignature(requestId, 'cac', null);
+              
+            } else {
+              alert('Please select a signature method.');
             }
-            
-            // Submit directly with manual signature
-            await submitWithManualSignature(manualSignature.trim());
-            
-          } else if (signatureMethod === 'cac') {
-            // Direct CAC submission - server will handle certificate validation
-            await submitWithCACSignature(requestId);
-            
-          } else {
-            alert('Please select a signature method.');
+          } catch (error) {
+            console.error('Submit error:', error);
+            alert('Failed to submit request. Please try again.');
           }
-        } catch (error) {
-          console.error('Error submitting request:', error);
-          alert('Failed to submit request. Please try again.');
-        }
-      }
-
-      // Submit request with manual signature
-      async function submitWithManualSignature(signature) {
-        try {
-          const form = document.getElementById('aft-request-form');
-          const formData = new FormData(form);
-          const requestId = formData.get('draft_id');
-
-          if (!requestId) {
-            alert('Could not determine Request ID. Please save the draft and try again.');
-            return;
-          }
-
+        },
+        
+        async submitWithSignature(requestId, method, signature) {
           const response = await fetch('/api/requestor/submit-request', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              requestId: requestId,
-              signatureMethod: 'manual',
+              requestId,
+              signatureMethod: method,
               manualSignature: signature
             })
           });
-
+          
           const result = await response.json();
-
+          
           if (result.success) {
-            alert('Request submitted successfully! It has been forwarded for review.');
+            alert('Request submitted successfully!');
             window.location.href = '/requestor/requests';
           } else {
-            alert('Error submitting request: ' + (result.message || 'Unknown error'));
+            alert('Error: ' + (result.message || 'Failed to submit request'));
           }
-        } catch (error) {
-          console.error('Error submitting with manual signature:', error);
-          alert('Failed to submit request. Please try again.');
         }
-      }
-
-      // Simple CAC submission - let server handle certificate validation
-      async function submitWithCACSignature(requestId) {
-        try {
-          // If requestId was not passed correctly, re-read it from the form
-          if (!requestId) {
-            const form = document.getElementById('aft-request-form');
-            const formData = new FormData(form);
-            requestId = formData.get('draft_id');
-          }
-
-          if (!requestId) {
-            alert('Could not determine Request ID. Please save the draft and try again.');
-            return;
-          }
-
-          const response = await fetch('/api/requestor/submit-request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              requestId: requestId,
-              signatureMethod: 'cac'
-            })
-          });
-
-          const result = await response.json();
-
-          if (result.success) {
-            alert('Request signed with CAC and submitted successfully! It has been forwarded for review.');
-            window.location.href = '/requestor/requests';
-          } else {
-            alert('Error submitting request: ' + (result.message || 'Unknown error'));
-          }
-        } catch (error) {
-          console.error('Error submitting CAC request:', error);
-          alert('Failed to submit request. Please try again.');
-        }
-      }
+      };
       
-      // CAC authentication is handled server-side via HTTPS client certificates
-      // No additional JavaScript needed for CAC functionality
+      // Initialize on DOM ready
+      document.addEventListener('DOMContentLoaded', () => RequestWizard.init());
     `;
   }
 }
