@@ -273,7 +273,8 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
     if (authResult.response) return authResult.response;
     
     try {
-      const { requestId, signatureMethod, manualSignature, cacSignature } = await request.json() as any;
+      const requestData = await request.json() as any;
+      const { requestId, signatureMethod, manualSignature } = requestData;
       
       if (!requestId) {
         return new Response(JSON.stringify({ 
