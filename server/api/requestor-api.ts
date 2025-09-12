@@ -475,13 +475,13 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
     if (authResult.response) return authResult.response;
     
     try {
-      // Extract client certificate from Caddy headers
-      // Caddy will forward the client certificate information via headers when client auth is enabled
+      // Extract client certificate from nginx headers
+      // nginx will forward the client certificate information via headers when client auth is enabled
       
       const clientCertSubject = request.headers.get('X-Client-Cert-Subject');
       const clientCertIssuer = request.headers.get('X-Client-Cert-Issuer');
       const clientCertSerial = request.headers.get('X-Client-Cert-Serial');
-      const clientCertThumbprint = request.headers.get('X-Client-Cert-Thumbprint');
+      const clientCertFingerprint = request.headers.get('X-Client-Cert-Fingerprint');
       const clientCertNotBefore = request.headers.get('X-Client-Cert-Not-Before');
       const clientCertNotAfter = request.headers.get('X-Client-Cert-Not-After');
       const clientCertPEM = request.headers.get('X-Client-Cert-PEM');
@@ -489,20 +489,20 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
       let hasCACCert = false;
       let certInfo = null;
       
-      // Check if we have client certificate information from Caddy
+      // Check if we have client certificate information from nginx
       if (clientCertSubject && clientCertIssuer) {
         hasCACCert = true;
         certInfo = {
           subject: clientCertSubject,
           issuer: clientCertIssuer,
           serialNumber: clientCertSerial || 'Unknown',
-          thumbprint: clientCertThumbprint || 'Unknown',
+          thumbprint: clientCertFingerprint || 'Unknown',
           validFrom: clientCertNotBefore || new Date().toISOString(),
           validTo: clientCertNotAfter || new Date().toISOString(),
           pemData: clientCertPEM || null
         };
         
-        console.log('CAC Certificate detected via Caddy:', {
+        console.log('CAC Certificate detected via nginx:', {
           subject: clientCertSubject,
           issuer: clientCertIssuer,
           serial: clientCertSerial
