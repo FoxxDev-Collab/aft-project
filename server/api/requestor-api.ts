@@ -511,7 +511,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         // No client certificate provided
         hasCACCert = false;
         certInfo = null;
-        console.log('No client certificate headers found - user may not have CAC inserted or Caddy not configured');
+        console.log('No client certificate headers found - user may not have CAC inserted or nginx not configured properly');
       }
       
       return new Response(JSON.stringify({

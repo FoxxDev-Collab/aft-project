@@ -19,9 +19,9 @@ import { handleCPSORoutes } from "./server/routes/cpso-routes";
 // Initialize security
 initializeSecurity();
 
-// Main server - Caddy handles TLS and client certificates
+// Main server - nginx handles TLS and client certificates
 Bun.serve({
-  port: 3001, // Caddy will proxy to this port
+  port: 3001, // nginx will proxy to this port
   
   async fetch(request: Request, server: any): Promise<Response> {
     const url = new URL(request.url);
@@ -102,5 +102,5 @@ console.log("=🔧 Database initialized with multi-role support");
 console.log("=🔐 Login with: admin@aft.gov / admin123");
 console.log("=👥 Multi-role authentication enabled");
 console.log("=🌐 Production URL: https://aft.foxxcyber.com");
-console.log("=🏷️  CAC authentication enabled via Caddy proxy");
-console.log("=💡 Restart Caddy: 'caddy reload' to enable CAC support");
+console.log("=🏷️  CAC authentication enabled via nginx proxy");
+console.log("=💡 Restart nginx: 'sudo nginx -s reload' to enable CAC support");
