@@ -30,6 +30,10 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 sudo chmod 600 /etc/httpd/ssl/aft.foxxcyber.com.key
 sudo chmod 644 /etc/httpd/ssl/aft.foxxcyber.com.crt
 
+# Disable default SSL configuration to avoid conflicts
+echo "Disabling default SSL configuration..."
+sudo mv /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf.disabled 2>/dev/null || true
+
 # Copy Apache configuration
 echo "Copying Apache configuration..."
 sudo cp /home/foxx/aft-project/apache-aft.conf /etc/httpd/conf.d/
