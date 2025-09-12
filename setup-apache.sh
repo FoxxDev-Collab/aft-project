@@ -13,7 +13,7 @@ sudo systemctl disable nginx || true
 
 # Install Apache and required modules
 echo "Installing Apache and SSL modules..."
-sudo dnf install -y httpd mod_ssl mod_headers
+sudo dnf install -y httpd mod_ssl
 
 # Create SSL directory
 echo "Creating SSL directory..."
@@ -40,10 +40,14 @@ if [ ! -f /home/foxx/aft-project/root-certs/DoD_Final_CA_Bundle.pem ]; then
     bash /home/foxx/aft-project/convert-dod-certs.sh
 fi
 
-# Enable proxy modules
-echo "Enabling required Apache modules..."
-sudo sed -i 's/#LoadModule proxy_module/LoadModule proxy_module/' /etc/httpd/conf.modules.d/00-proxy.conf 2>/dev/null || true
-sudo sed -i 's/#LoadModule proxy_http_module/LoadModule proxy_http_module/' /etc/httpd/conf.modules.d/00-proxy.conf 2>/dev/null || true
+# Enable proxy modules (they might already be enabled)
+echo "Checking Apache proxy modules..."
+if [ -f /etc/httpd/conf.modules.d/00-proxy.conf ]; then
+    sudo sed -i 's/^#LoadModule proxy_module/LoadModule proxy_module/' /etc/httpd/conf.modules.d/00-proxy.conf 2>/dev/null || true
+    sudo sed -i 's/^#LoadModule proxy_http_module/LoadModule proxy_http_module/' /etc/httpd/conf.modules.d/00-proxy.conf 2>/dev/null || true
+else
+    echo "Proxy modules config not found, they may be built-in or in a different location"
+fi
 
 # SELinux settings (if SELinux is enabled)
 if command -v getenforce &> /dev/null && [ "$(getenforce)" != "Disabled" ]; then
