@@ -442,7 +442,7 @@ export class RequestWizard {
     `;
 
     // Signature Section for Submission
-    const signatureSection = `
+    const signatureSection = existingDraft ? `
       ${FormComponents.sectionHeader({
         title: 'Digital Signature & Submission',
         subtitle: 'Choose your signature method and submit the request',
@@ -463,16 +463,8 @@ export class RequestWizard {
               name: 'signature_method',
               value: existingDraft?.signature_method || 'manual',
               options: [
-                { 
-                  value: 'manual', 
-                  label: 'Manual Signature',
-                  description: 'Traditional electronic signature with typed certification'
-                },
-                { 
-                  value: 'cac', 
-                  label: 'CAC Certificate Signature',
-                  description: 'Digital signature using your DOD Common Access Card (Recommended)'
-                }
+                { value: 'manual', label: 'Manual Signature' },
+                { value: 'cac', label: 'CAC Certificate Signature' }
               ]
             })
           })}
@@ -491,8 +483,7 @@ export class RequestWizard {
                 children: FormComponents.textInput({
                   name: 'manual_signature',
                   value: existingDraft?.manual_signature || '',
-                  placeholder: 'Type your full name here',
-                  id: 'manual-signature-input'
+                  placeholder: 'Type your full name here'
                 })
               })}
             </div>
@@ -512,6 +503,17 @@ export class RequestWizard {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    ` : `
+      ${FormComponents.sectionHeader({
+        title: 'Digital Signature & Submission',
+        subtitle: 'Sign & submit is available after you save your draft',
+        sectionNumber: 'III'
+      })}
+      <div class="bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-md p-4">
+        <div class="text-sm text-[var(--warning)]">
+          You must save this request as a draft before signing and submitting. Click "Save Draft", then reopen the request to review and sign.
         </div>
       </div>
     `;
@@ -553,6 +555,7 @@ export class RequestWizard {
             onclick="submitRequest()"
             id="submit-button"
             class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors"
+            ${existingDraft ? '' : 'disabled'}
           >
             Sign & Submit Request
           </button>
@@ -884,10 +887,10 @@ export class RequestWizard {
         const response = await fetch('/api/requestor/save-draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         if (response.ok) {
           const result = await response.json();
-          if (result.requestId && !data.draft_id) {
-            window.history.pushState({}, '', '/requestor/new-request?draft=' + result.requestId);
-            const draftIdEl = document.querySelector('input[name="draft_id"]');
-            if (draftIdEl) draftIdEl.value = result.requestId;
+          const draftId = result.requestId || data.draft_id;
+          if (draftId) {
+            window.location.href = '/requestor/new-request?draft=' + draftId;
+            return;
           }
         } else {
           alert('Failed to save draft. Please try again.');
@@ -920,21 +923,21 @@ export class RequestWizard {
       async function submitRequest() {
         try {
           const form = document.getElementById('aft-request-form');
-          
-          // Always save draft first to get a request ID
-          await saveDraft();
-          
-          // Re-read form data AFTER saving, since saveDraft may set draft_id
           const formData = new FormData(form);
           const signatureMethod = formData.get('signature_method');
           const requestId = formData.get('draft_id');
-          
+
+          if (!requestId) {
+            alert('This request must be saved as a draft before signing. Click "Save Draft" first.');
+            return;
+          }
+
           if (signatureMethod === 'manual') {
             // Use manual signature flow
             const manualSignature = formData.get('manual_signature');
             if (!manualSignature || manualSignature.trim() === '') {
               alert('Please enter your full name to confirm the certification.');
-              document.getElementById('manual-signature-input').focus();
+              const el = document.querySelector('input[name="manual_signature"]'); if (el) (el as HTMLInputElement).focus();
               return;
             }
             
