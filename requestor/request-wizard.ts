@@ -461,19 +461,32 @@ export class RequestWizard {
       </div>
     `;
 
-    // Simplified Signature Section
-    const signatureSection = existingDraft ? `
+    // Signature Section - Only show when reviewing saved draft
+    const signatureSection = existingDraft && existingDraft.status === 'draft' ? `
       ${FormComponents.sectionHeader({
-        title: 'Digital Signature & Submission',
-        subtitle: 'Sign and submit your request',
+        title: 'Review & Digital Signature',
+        subtitle: 'Review your request and provide digital signature to submit',
         sectionNumber: 'III'
       })}
       
       <div class="space-y-6">
+        <!-- Request Summary -->
+        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4">
+          <h3 class="text-sm font-semibold text-[var(--foreground)] mb-3">Request Summary</h3>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div><span class="text-[var(--muted-foreground)]">Request #:</span> <span class="font-medium">${existingDraft.request_number}</span></div>
+            <div><span class="text-[var(--muted-foreground)]">Classification:</span> <span class="font-medium">${existingDraft.classification || 'Not specified'}</span></div>
+            <div><span class="text-[var(--muted-foreground)]">Source:</span> <span class="font-medium">${existingDraft.source_system || 'Not specified'}</span></div>
+            <div><span class="text-[var(--muted-foreground)]">Destination:</span> <span class="font-medium">${existingDraft.dest_system || 'Not specified'}</span></div>
+          </div>
+        </div>
+        
+        <!-- Certification & Signature -->
         <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
           <h3 class="text-sm font-semibold text-[var(--foreground)]">Certification & Signature</h3>
           
           <div class="text-sm text-[var(--muted-foreground)] mb-4 p-3 bg-[var(--card)] rounded border-l-4 border-[var(--primary)]">
+            <strong>Certification Statement:</strong><br/>
             "I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts and comply with all applicable security requirements."
           </div>
           
@@ -494,10 +507,11 @@ export class RequestWizard {
             ${FormComponents.formField({
               label: 'Type your full name to confirm certification',
               required: true,
+              description: 'By typing your name, you certify the accuracy of this request',
               children: FormComponents.textInput({
                 name: 'manual_signature',
                 value: '',
-                placeholder: 'Type your full name here'
+                placeholder: 'Enter your full legal name'
               })
             })}
           </div>
@@ -505,25 +519,14 @@ export class RequestWizard {
           <div id="cac-signature-area" class="mt-4 hidden">
             <div class="flex items-center gap-3 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
               <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
-              <span class="text-sm text-[var(--info)]">CAC authentication via HTTPS - certificate will be validated on submission</span>
+              <span class="text-sm text-[var(--info)]">CAC authentication will be performed via HTTPS client certificate</span>
             </div>
           </div>
         </div>
       </div>
-    ` : `
-      ${FormComponents.sectionHeader({
-        title: 'Digital Signature & Submission',
-        subtitle: 'Save your draft first to enable signing',
-        sectionNumber: 'III'
-      })}
-      <div class="bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-md p-4">
-        <div class="text-sm text-[var(--warning)]">
-          Save this request as a draft first, then reopen to sign and submit.
-        </div>
-      </div>
-    `;
+    ` : '';
 
-    // Form actions
+    // Form actions based on draft status
     const formActions = `
       <div class="flex justify-between items-center pt-6 border-t border-[var(--border)]">
         <button
@@ -535,24 +538,33 @@ export class RequestWizard {
         </button>
         
         <div class="flex space-x-3">
-          <button
-            type="button"
-            onclick="RequestWizard.saveDraft()"
-            id="save-button"
-            class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors"
-          >
-            Save Draft
-          </button>
-          
-          <button
-            type="button"
-            onclick="RequestWizard.submitRequest()"
-            id="submit-button"
-            class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors"
-            ${existingDraft ? '' : 'disabled'}
-          >
-            Sign & Submit Request
-          </button>
+          ${existingDraft && existingDraft.status !== 'draft' ? `
+            <div class="px-4 py-2 text-sm text-[var(--muted-foreground)]">
+              Request already submitted
+            </div>
+          ` : `
+            <button
+              type="button"
+              onclick="RequestWizard.saveDraft()"
+              id="save-button"
+              class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span id="save-button-text">${existingDraft ? 'Update Draft' : 'Save Draft'}</span>
+              <span id="save-button-spinner" class="hidden">Saving...</span>
+            </button>
+            
+            ${existingDraft && existingDraft.status === 'draft' ? `
+              <button
+                type="button"
+                onclick="RequestWizard.submitRequest()"
+                id="submit-button"
+                class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span id="submit-button-text">Sign & Submit Request</span>
+                <span id="submit-button-spinner" class="hidden">Submitting...</span>
+              </button>
+            ` : ''}
+          `}
         </div>
       </div>
     `;
@@ -753,9 +765,28 @@ export class RequestWizard {
         },
         
         async saveDraft() {
+          // Show loading state
+          const saveBtn = document.getElementById('save-button');
+          const saveBtnText = document.getElementById('save-button-text');
+          const saveBtnSpinner = document.getElementById('save-button-spinner');
+          
+          if (saveBtn) {
+            saveBtn.setAttribute('disabled', 'disabled');
+            if (saveBtnText) saveBtnText.classList.add('hidden');
+            if (saveBtnSpinner) saveBtnSpinner.classList.remove('hidden');
+          }
+          
           const form = document.getElementById('aft-request-form');
           const formData = new FormData(form);
           const data = Object.fromEntries(formData.entries());
+          
+          // Validate required fields
+          const dtaSelect = document.querySelector('select[name="dta_id"]');
+          if (!dtaSelect || !dtaSelect.value) {
+            alert('Please select a DTA for this request.');
+            this.resetSaveButton();
+            return;
+          }
           
           // Collect files
           const files = [];
@@ -796,25 +827,60 @@ export class RequestWizard {
               const result = await response.json();
               const draftId = result.requestId || data.draft_id;
               if (draftId) {
-                window.location.href = '/requestor/new-request?draft=' + draftId;
+                // Show success message before redirect
+                const successMsg = document.createElement('div');
+                successMsg.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+                successMsg.textContent = 'Draft saved successfully! Redirecting...';
+                document.body.appendChild(successMsg);
+                
+                // Redirect after short delay
+                setTimeout(() => {
+                  window.location.href = '/requestor/new-request?draft=' + draftId;
+                }, 1000);
               }
             } else {
-              alert('Failed to save draft. Please try again.');
+              alert('Failed to save draft. Please check all required fields and try again.');
+              this.resetSaveButton();
             }
           } catch (e) {
             console.error('Save draft error:', e);
             alert('Failed to save draft. Please try again.');
+            this.resetSaveButton();
+          }
+        },
+        
+        resetSaveButton() {
+          const saveBtn = document.getElementById('save-button');
+          const saveBtnText = document.getElementById('save-button-text');
+          const saveBtnSpinner = document.getElementById('save-button-spinner');
+          
+          if (saveBtn) {
+            saveBtn.removeAttribute('disabled');
+            if (saveBtnText) saveBtnText.classList.remove('hidden');
+            if (saveBtnSpinner) saveBtnSpinner.classList.add('hidden');
           }
         },
         
         async submitRequest() {
+          // Show loading state
+          const submitBtn = document.getElementById('submit-button');
+          const submitBtnText = document.getElementById('submit-button-text');
+          const submitBtnSpinner = document.getElementById('submit-button-spinner');
+          
+          if (submitBtn) {
+            submitBtn.setAttribute('disabled', 'disabled');
+            if (submitBtnText) submitBtnText.classList.add('hidden');
+            if (submitBtnSpinner) submitBtnSpinner.classList.remove('hidden');
+          }
+          
           const form = document.getElementById('aft-request-form');
           const formData = new FormData(form);
           const signatureMethod = formData.get('signature_method');
           const requestId = formData.get('draft_id');
           
           if (!requestId) {
-            alert('Please save the draft first before submitting.');
+            alert('Error: Request ID not found. Please refresh the page and try again.');
+            this.resetSubmitButton();
             return;
           }
           
@@ -822,12 +888,14 @@ export class RequestWizard {
           const dtaSelect = document.querySelector('select[name="dta_id"]');
           if (!dtaSelect || !dtaSelect.value) {
             alert('Please select a DTA for this request.');
+            this.resetSubmitButton();
             return;
           }
           
           const selectedDTA = this.dtaData.find(d => d.id.toString() === dtaSelect.value);
           if (selectedDTA && !selectedDTA.has_drive) {
             alert('The selected DTA does not have a drive issued. Please contact the Media Custodian or select a different DTA.');
+            this.resetSubmitButton();
             return;
           }
           
@@ -836,6 +904,7 @@ export class RequestWizard {
               const manualSignature = formData.get('manual_signature');
               if (!manualSignature || manualSignature.trim() === '') {
                 alert('Please enter your full name to sign the request.');
+                this.resetSubmitButton();
                 return;
               }
               
@@ -846,31 +915,60 @@ export class RequestWizard {
               
             } else {
               alert('Please select a signature method.');
+              this.resetSubmitButton();
             }
           } catch (error) {
             console.error('Submit error:', error);
             alert('Failed to submit request. Please try again.');
+            this.resetSubmitButton();
+          }
+        },
+        
+        resetSubmitButton() {
+          const submitBtn = document.getElementById('submit-button');
+          const submitBtnText = document.getElementById('submit-button-text');
+          const submitBtnSpinner = document.getElementById('submit-button-spinner');
+          
+          if (submitBtn) {
+            submitBtn.removeAttribute('disabled');
+            if (submitBtnText) submitBtnText.classList.remove('hidden');
+            if (submitBtnSpinner) submitBtnSpinner.classList.add('hidden');
           }
         },
         
         async submitWithSignature(requestId, method, signature) {
-          const response = await fetch('/api/requestor/submit-request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              requestId,
-              signatureMethod: method,
-              manualSignature: signature
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (result.success) {
-            alert('Request submitted successfully!');
-            window.location.href = '/requestor/requests';
-          } else {
-            alert('Error: ' + (result.message || 'Failed to submit request'));
+          try {
+            const response = await fetch('/api/requestor/submit-request', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requestId,
+                signatureMethod: method,
+                manualSignature: signature
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              // Show success message
+              const successMsg = document.createElement('div');
+              successMsg.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+              successMsg.textContent = 'Request submitted successfully! Redirecting...';
+              document.body.appendChild(successMsg);
+              
+              // Redirect after short delay
+              setTimeout(() => {
+                window.location.href = '/requestor/requests';
+              }, 1500);
+            } else {
+              alert('Error: ' + (result.message || 'Failed to submit request'));
+              this.resetSubmitButton();
+            }
+          } catch (error) {
+            console.error('Submit signature error:', error);
+            alert('Failed to submit request. Please try again.');
+            this.resetSubmitButton();
           }
         }
       };
