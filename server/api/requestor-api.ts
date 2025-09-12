@@ -303,6 +303,9 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         WHERE id = ? AND requestor_id = ?
       `).get(requestId, authResult.session.userId) as any;
       
+      console.log('Submit request - Request ID:', requestId, 'User ID:', authResult.session.userId);
+      console.log('Found request:', existingRequest);
+      
       if (!existingRequest) {
         return new Response(JSON.stringify({ 
           success: false, 
@@ -316,7 +319,7 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
       if (!['draft'].includes(existingRequest.status)) {
         return new Response(JSON.stringify({ 
           success: false, 
-          message: 'Only draft requests can be submitted' 
+          message: `Request status is '${existingRequest.status}', only draft requests can be submitted` 
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }

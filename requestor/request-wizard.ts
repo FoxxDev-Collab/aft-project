@@ -825,18 +825,15 @@ export class RequestWizard {
             
             if (response.ok) {
               const result = await response.json();
+              console.log('Save response:', result);
               const draftId = result.requestId || data.draft_id;
+              console.log('Draft ID for redirect:', draftId);
               if (draftId) {
-                // Show success message before redirect
-                const successMsg = document.createElement('div');
-                successMsg.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-                successMsg.textContent = 'Draft saved successfully! Redirecting...';
-                document.body.appendChild(successMsg);
-                
-                // Redirect to request details page after short delay
-                setTimeout(() => {
-                  window.location.href = '/requestor/requests/' + draftId;
-                }, 1000);
+                // Immediate redirect - no delay
+                window.location.href = '/requestor/requests/' + draftId;
+              } else {
+                console.error('No draft ID returned from save');
+                alert('Draft saved but could not determine request ID for redirect.');
               }
             } else {
               alert('Failed to save draft. Please check all required fields and try again.');
