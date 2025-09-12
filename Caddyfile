@@ -4,8 +4,8 @@ aft.foxxcyber.com {
     tls {
         client_auth {
             mode request  # Request but don't require - allows both CAC and non-CAC users
-            # For production, add DOD CA certificates:
-            # trusted_ca_certs /path/to/dod-root-ca.pem
+            # DOD CA certificates for CAC authentication
+            trusted_ca_certs ./root-certs/DoD_PKE_CA_chain.pem
         }
     }
 
