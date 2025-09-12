@@ -5,7 +5,9 @@ aft.foxxcyber.com {
         client_auth {
             mode request  # Request but don't require - allows both CAC and non-CAC users
             # DOD CA certificates for CAC authentication
-            trusted_ca_certs ./root-certs/DoD_PKE_CA_chain.pem
+            trust_pool file {
+                pem_file /home/foxx/aft-project/root-certs/DoD_Final_CA_Bundle.pem
+            }
         }
     }
 
@@ -23,7 +25,7 @@ aft.foxxcyber.com {
 
     # Enable logging for debugging CAC authentication
     log {
-        output file /var/log/caddy/aft-access.log
+        output file /var/lib/caddy/logs/aft-access.log
         level INFO
     }
 }
