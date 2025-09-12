@@ -6,7 +6,7 @@ import { AFT_STATUS_LABELS, AFTStatus } from "../lib/database-bun";
 import { FileTextIcon, ClockIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, DownloadIcon, PlusIcon, ArrowRightIcon } from "../components/icons";
 
 export class RequestorRequests {
-  static async render(user: RequestorUser, viewMode: 'table' | 'timeline' = 'table'): Promise<string> {
+  static async render(user: RequestorUser, viewMode: 'table' | 'timeline' = 'table', userId?: number): Promise<string> {
     const db = getDb();
     
     // Get user's requests
@@ -14,9 +14,9 @@ export class RequestorRequests {
       SELECT r.*, u.email as approver_email
       FROM aft_requests r
       LEFT JOIN users u ON r.approver_id = u.id
-      WHERE r.requestor_email = ?
+      WHERE r.requestor_id = ?
       ORDER BY r.created_at DESC
-    `).all(user.email) as any[];
+    `).all(userId || 0) as any[];
 
     const tableData = userRequests.map((request: any) => ({
       id: request.id,

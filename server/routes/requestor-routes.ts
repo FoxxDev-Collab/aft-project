@@ -35,7 +35,7 @@ export async function handleRequestorRoutes(request: Request, path: string, ipAd
     case '/requestor/requests':
       const requestsUrl = new URL(request.url);
       const viewMode = (requestsUrl.searchParams.get('view') as 'table' | 'timeline') || 'table';
-      const requestsHtml = await RequestorRequests.render(user, viewMode);
+      const requestsHtml = await RequestorRequests.render(user, viewMode, authResult.session.userId);
       return new Response(createHtmlPage(
         "AFT - My Requests",
         requestsHtml,

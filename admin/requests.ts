@@ -302,7 +302,7 @@ export class AdminRequests {
       </div>
     `;
   }
-
+ 
   static getScript(): string {
     return `
       let currentView = 'table';
