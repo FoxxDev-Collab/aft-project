@@ -1,0 +1,16 @@
+✓ DTA Section 4 and Media Disposition migrations completed successfully
+🔒 CAC and manual signature tables initialized
+🔒 Security module initialized
+📋 Password policy: Min 12 chars, complexity required
+⏰ Session timeout: 10 minutes
+🚫 Max login attempts: 5
+🔄 Loaded 2 existing sessions from database
+=🚀 AFT Server running on http://localhost:3001
+=🔧 Database initialized with multi-role support
+=🔐 Login with: admin@aft.gov / admin123
+=👥 Multi-role authentication enabled
+=🌐 Production URL: https://aft.foxxcyber.com
+=🏷️  CAC authentication enabled via nginx proxy
+=💡 Restart nginx: 'sudo nginx -s reload' to enable CAC support
+✓ Created/verified aft_request_history table
+✓ Approver migrations completed successfully
