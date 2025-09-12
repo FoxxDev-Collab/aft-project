@@ -102,7 +102,7 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
   const cacSignature = db.query(`
     SELECT cs.*, u.first_name || ' ' || u.last_name as signer_name
     FROM cac_signatures cs
-    LEFT JOIN users u ON cs.signer_id = u.id
+    LEFT JOIN users u ON cs.user_id = u.id
     WHERE cs.request_id = ?
     ORDER BY cs.created_at DESC
     LIMIT 1
