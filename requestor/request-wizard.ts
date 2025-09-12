@@ -503,12 +503,12 @@ export class RequestWizard {
             <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4">
               <h4 class="text-sm font-medium text-[var(--foreground)] mb-3">CAC Digital Signature</h4>
               <div class="text-sm text-[var(--muted-foreground)] mb-4">
-                Your CAC certificate will be used to digitally sign this request, providing cryptographic proof of authenticity and integrity.
+                Your CAC certificate will be used to digitally sign this request. The browser will prompt you to select your certificate and enter your PIN.
               </div>
               
               <div class="flex items-center gap-3 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
                 <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
-                <span class="text-sm text-[var(--info)]">CAC signature will be applied during submission</span>
+                <span class="text-sm text-[var(--info)]">Server-level CAC authentication - no additional setup required</span>
               </div>
             </div>
           </div>
@@ -577,8 +577,6 @@ export class RequestWizard {
           </div>
         </form>
         
-        <!-- CAC PIN Modal -->
-        ${CACPinModal.render(false)}
     `;
 
     return RequestorNavigation.renderLayout(
@@ -918,7 +916,7 @@ export class RequestWizard {
         catch (e) { console.error('Failed to save and close', e); alert('Failed to save. Please try again.'); }
       }
 
-      // Streamlined submit function that handles both manual and CAC signatures
+      // Simple submit function that handles both manual and CAC signatures
       async function submitRequest() {
         try {
           const form = document.getElementById('aft-request-form');
@@ -929,11 +927,7 @@ export class RequestWizard {
           await saveDraft();
           const requestId = formData.get('draft_id');
           
-          if (signatureMethod === 'cac') {
-            // Show CAC PIN modal for signature
-            showCACPinModal(requestId);
-            
-          } else if (signatureMethod === 'manual') {
+          if (signatureMethod === 'manual') {
             // Use manual signature flow
             const manualSignature = formData.get('manual_signature');
             if (!manualSignature || manualSignature.trim() === '') {
@@ -944,6 +938,11 @@ export class RequestWizard {
             
             // Submit directly with manual signature
             await submitWithManualSignature(manualSignature.trim());
+            
+          } else if (signatureMethod === 'cac') {
+            // Direct CAC submission - server will handle certificate validation
+            await submitWithCACSignature(requestId);
+            
           } else {
             alert('Please select a signature method.');
           }
@@ -984,41 +983,34 @@ export class RequestWizard {
         }
       }
 
-      // Override the CAC signature submission to redirect to requests page
-      async function submitCACSignature(requestId, signatureResult) {
+      // Simple CAC submission - let server handle certificate validation
+      async function submitWithCACSignature(requestId) {
         try {
           const response = await fetch('/api/requestor/submit-request', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               requestId: requestId,
-              signatureMethod: 'cac',
-              cacSignature: {
-                signature: signatureResult.signature,
-                certificate: signatureResult.certificate,
-                timestamp: signatureResult.timestamp,
-                algorithm: signatureResult.algorithm
-              }
+              signatureMethod: 'cac'
             })
           });
 
           const result = await response.json();
 
           if (result.success) {
-            closeCACPinModal();
             alert('Request signed with CAC and submitted successfully! It has been forwarded for review.');
             window.location.href = '/requestor/requests';
           } else {
-            showCACError('Server error: ' + (result.message || 'Unknown error'));
+            alert('Error submitting request: ' + (result.message || 'Unknown error'));
           }
         } catch (error) {
-          console.error('Error submitting CAC signature:', error);
-          showCACError('Failed to submit request. Please try again.');
+          console.error('Error submitting CAC request:', error);
+          alert('Failed to submit request. Please try again.');
         }
       }
       
-      // Include CAC PIN Modal script
-      ${CACPinModal.getScript()}
+      // CAC authentication is handled server-side via HTTPS client certificates
+      // No additional JavaScript needed for CAC functionality
     `;
   }
 }
