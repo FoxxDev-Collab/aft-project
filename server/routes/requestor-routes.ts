@@ -98,6 +98,16 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
   const { RequestTrackingService } = await import('../../lib/request-tracking');
   const timelineData = RequestTrackingService.getRequestTimeline(requestId);
   
+  // Get CAC signature data for this request
+  const cacSignature = db.query(`
+    SELECT cs.*, u.first_name || ' ' || u.last_name as signer_name
+    FROM cac_signatures cs
+    LEFT JOIN users u ON cs.signer_id = u.id
+    WHERE cs.request_id = ?
+    ORDER BY cs.created_at DESC
+    LIMIT 1
+  `).get(requestId) as any;
+  
   // Parse files list
   let files = [];
   try {
@@ -185,6 +195,64 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
                 </div>
               ` : '<p class="text-[var(--muted-foreground)]">No files specified</p>'}
             </div>
+            
+            <!-- CAC Digital Signature -->
+            ${cacSignature ? `
+            <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6">
+              <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                CAC Digital Signature
+              </h2>
+              <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Signed By</label>
+                    <div class="text-gray-900 font-medium">${cacSignature.signer_name || cacSignature.signer_email}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Signature Date</label>
+                    <div class="text-gray-900">${new Date(cacSignature.signature_timestamp).toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Certificate Subject</label>
+                    <div class="text-gray-900 text-sm font-mono break-all">${cacSignature.certificate_subject}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Certificate Issuer</label>
+                    <div class="text-gray-900 text-sm font-mono break-all">${cacSignature.certificate_issuer}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Certificate Serial</label>
+                    <div class="text-gray-900 font-mono">${cacSignature.certificate_serial}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Signature Algorithm</label>
+                    <div class="text-gray-900">${cacSignature.signature_algorithm}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Certificate Valid From</label>
+                    <div class="text-gray-900">${new Date(cacSignature.certificate_valid_from).toLocaleDateString()}</div>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-gray-600">Certificate Valid To</label>
+                    <div class="text-gray-900">${new Date(cacSignature.certificate_valid_to).toLocaleDateString()}</div>
+                  </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-green-200">
+                  <label class="text-sm font-medium text-gray-600">Digital Signature Hash</label>
+                  <div class="text-gray-900 text-xs font-mono break-all bg-gray-50 p-2 rounded mt-1">${cacSignature.signature_hash}</div>
+                </div>
+                ${cacSignature.notes ? `
+                <div class="mt-3">
+                  <label class="text-sm font-medium text-gray-600">Notes</label>
+                  <div class="text-gray-900">${cacSignature.notes}</div>
+                </div>
+                ` : ''}
+              </div>
+            </div>
+            ` : ''}
             
             ${canSubmit ? `
             <!-- Submission Section -->

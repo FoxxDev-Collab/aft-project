@@ -43,6 +43,15 @@ export interface SecureSession {
   csrfToken: string;
   isActive: boolean;
   roleSelected: boolean; // Whether user has selected their active role
+  cacCertificate?: {  // CAC certificate from initial connection
+    subject: string;
+    issuer: string;
+    serialNumber: string;
+    thumbprint: string;
+    validFrom: string;
+    validTo: string;
+    pemData?: string;
+  };
 }
 
 // Rate limiting store
@@ -140,7 +149,8 @@ export async function createSecureSession(
   primaryRole: string,
   availableRoles: string[],
   ipAddress: string, 
-  userAgent: string
+  userAgent: string,
+  cacCertificate?: any
 ): Promise<SecureSession> {
   const sessionId = generateSecureToken(32);
   const csrfToken = generateSecureToken(32);
@@ -159,7 +169,8 @@ export async function createSecureSession(
     userAgent,
     csrfToken,
     isActive: true,
-    roleSelected: false
+    roleSelected: false,
+    cacCertificate: cacCertificate && cacCertificate.subject ? cacCertificate : undefined
   };
   
   // Save to memory store

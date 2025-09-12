@@ -50,6 +50,20 @@ export async function handleAuthAPI(request: Request, path: string, ipAddress: s
     const body = await request.json() as { email: string; password: string };
     const userAgent = request.headers.get('user-agent') || 'unknown';
     
+    // Extract CAC certificate info from Apache headers if present
+    const cacCertificate = {
+      subject: request.headers.get('X-Client-Cert-Subject') || '',
+      issuer: request.headers.get('X-Client-Cert-Issuer') || '',
+      serialNumber: request.headers.get('X-Client-Cert-Serial') || '',
+      thumbprint: request.headers.get('X-Client-Cert-Fingerprint') || '',
+      validFrom: request.headers.get('X-Client-Cert-Not-Before') || '',
+      validTo: request.headers.get('X-Client-Cert-Not-After') || '',
+      pemData: request.headers.get('X-Client-Cert-PEM') || ''
+    };
+    
+    // Check if we have a valid CAC certificate
+    const hasCAC = cacCertificate.subject && cacCertificate.issuer;
+    
     // Check rate limiting
     const rateCheck = checkRateLimit(ipAddress + ':' + body.email);
     if (!rateCheck.allowed) {
@@ -97,7 +111,8 @@ export async function handleAuthAPI(request: Request, path: string, ipAddress: s
         user.primary_role,
         availableRoles,
         ipAddress, 
-        userAgent
+        userAgent,
+        hasCAC ? cacCertificate : undefined
       );
       
       await auditLog(user.id, 'LOGIN_SUCCESS', 
