@@ -60,7 +60,7 @@ export class RequestWizard {
       FROM users u
       JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
       LEFT JOIN media_drives md ON md.issued_to_user_id = u.id AND md.status = 'issued'
-      WHERE u.is_active = 1 AND ur.role = 'DTA'
+      WHERE u.is_active = 1 AND ur.role = 'dta'
       ORDER BY u.last_name, u.first_name
     `).all() as any[];
 
