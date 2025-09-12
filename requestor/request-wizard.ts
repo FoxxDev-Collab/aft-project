@@ -833,9 +833,9 @@ export class RequestWizard {
                 successMsg.textContent = 'Draft saved successfully! Redirecting...';
                 document.body.appendChild(successMsg);
                 
-                // Redirect after short delay
+                // Redirect to request details page after short delay
                 setTimeout(() => {
-                  window.location.href = '/requestor/new-request?draft=' + draftId;
+                  window.location.href = '/requestor/requests/' + draftId;
                 }, 1000);
               }
             } else {

@@ -189,26 +189,62 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
             ${canSubmit ? `
             <!-- Submission Section -->
             <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6">
-              <h2 class="text-xl font-semibold mb-4">Submit Request</h2>
+              <h2 class="text-xl font-semibold mb-4">Review & Submit Request</h2>
               <div class="space-y-4">
                 <div class="p-4 bg-[var(--muted)] rounded-lg">
                   <h3 class="font-medium mb-2">Certification Statement</h3>
                   <p class="text-sm text-[var(--muted-foreground)]">
                     I certify that the above file(s)/media to be transferred to/from the IS are required to support 
-                    the development and sustainment contractual efforts on the ACDS contract.
+                    the development and sustainment contractual efforts and comply with all applicable security requirements.
                   </p>
                 </div>
+                
+                <!-- Signature Method Selection -->
+                <div class="p-4 bg-[var(--muted)] rounded-lg">
+                  <h3 class="font-medium mb-3">Signature Method</h3>
+                  <div class="space-y-3">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="signature_method" value="manual" checked class="text-[var(--primary)]">
+                      <span class="text-sm">Manual Signature - Type your name</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="signature_method" value="cac" class="text-[var(--primary)]">
+                      <span class="text-sm">CAC Certificate - Automatic via HTTPS</span>
+                    </label>
+                  </div>
+                  
+                  <!-- Manual Signature Input -->
+                  <div id="manual-signature-area" class="mt-4">
+                    <label for="manual-signature" class="block text-sm font-medium mb-1">Type your full name to sign</label>
+                    <input 
+                      type="text" 
+                      id="manual-signature" 
+                      placeholder="Enter your full legal name"
+                      class="w-full px-3 py-2 border border-[var(--border)] rounded-md bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                    >
+                  </div>
+                  
+                  <!-- CAC Signature Info -->
+                  <div id="cac-signature-area" class="mt-4 hidden">
+                    <div class="flex items-center gap-2 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
+                      <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
+                      <span class="text-sm text-[var(--info)]">CAC authentication will be performed via HTTPS client certificate</span>
+                    </div>
+                  </div>
+                </div>
+                
                 <div class="flex items-center gap-2">
                   <input type="checkbox" id="certify-checkbox" class="rounded">
                   <label for="certify-checkbox" class="text-sm">I agree to the certification statement above</label>
                 </div>
+                
                 <button 
                   onclick="submitRequest(${requestId})" 
                   id="submit-btn"
                   disabled
                   class="action-btn primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Submit Request for Review
+                  Sign & Submit Request for Review
                 </button>
               </div>
             </div>
@@ -248,7 +284,8 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
             <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6">
               <h2 class="text-xl font-semibold mb-4">Actions</h2>
               <div class="space-y-2">
-                ${canEdit ? `<button onclick="editRequest(${requestId})" class="w-full action-btn secondary">Edit Request</button>` : ''}
+                ${canEdit ? `<button onclick="editRequest(${requestId})" class="w-full action-btn secondary">Edit Request Details</button>` : ''}
+                ${canSubmit ? `<button onclick="window.location.href='/requestor/new-request?draft=${requestId}'" class="w-full action-btn secondary">Return to Edit Form</button>` : ''}
                 <button onclick="viewTimeline(${requestId})" class="w-full action-btn secondary">View Timeline</button>
                 <button onclick="window.print()" class="w-full action-btn secondary">Print Request</button>
               </div>
@@ -286,6 +323,23 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
   `;
   
   const script = `
+    // Handle signature method toggle
+    const signatureRadios = document.querySelectorAll('input[name="signature_method"]');
+    const manualArea = document.getElementById('manual-signature-area');
+    const cacArea = document.getElementById('cac-signature-area');
+    
+    signatureRadios.forEach(radio => {
+      radio.addEventListener('change', function() {
+        if (this.value === 'manual') {
+          manualArea.style.display = 'block';
+          cacArea.style.display = 'none';
+        } else if (this.value === 'cac') {
+          manualArea.style.display = 'none';
+          cacArea.style.display = 'block';
+        }
+      });
+    });
+    
     // Enable submit button when checkbox is checked
     const checkbox = document.getElementById('certify-checkbox');
     const submitBtn = document.getElementById('submit-btn');
@@ -302,10 +356,21 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
         return;
       }
       
-      const signature = {
-        timestamp: Date.now(),
-        userAgent: navigator.userAgent
-      };
+      const signatureMethod = document.querySelector('input[name="signature_method"]:checked').value;
+      let manualSignature = null;
+      
+      if (signatureMethod === 'manual') {
+        manualSignature = document.getElementById('manual-signature').value.trim();
+        if (!manualSignature) {
+          alert('Please enter your full name to sign the request.');
+          return;
+        }
+      }
+      
+      // Disable button and show loading state
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
       
       fetch('/api/requestor/submit-request', {
         method: 'POST',
@@ -314,21 +379,26 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
         },
         body: JSON.stringify({
           requestId: requestId,
-          signature: signature
+          signatureMethod: signatureMethod,
+          manualSignature: manualSignature
         })
       })
       .then(response => response.json())
       .then(data => {
         if (data.success) {
-          alert('Request submitted successfully! It is now pending ISSM/ISSO review.');
-          window.location.reload();
+          alert('Request submitted successfully! It is now pending review.');
+          window.location.href = '/requestor/requests';
         } else {
-          alert('Failed to submit request: ' + data.message);
+          alert('Failed to submit request: ' + (data.message || 'Unknown error'));
+          btn.disabled = false;
+          btn.textContent = 'Sign & Submit Request for Review';
         }
       })
       .catch(error => {
         console.error('Error submitting request:', error);
         alert('Failed to submit request. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Sign & Submit Request for Review';
       });
     }
     
