@@ -920,11 +920,13 @@ export class RequestWizard {
       async function submitRequest() {
         try {
           const form = document.getElementById('aft-request-form');
-          const formData = new FormData(form);
-          const signatureMethod = formData.get('signature_method');
           
           // Always save draft first to get a request ID
           await saveDraft();
+          
+          // Re-read form data AFTER saving, since saveDraft may set draft_id
+          const formData = new FormData(form);
+          const signatureMethod = formData.get('signature_method');
           const requestId = formData.get('draft_id');
           
           if (signatureMethod === 'manual') {
@@ -959,6 +961,11 @@ export class RequestWizard {
           const formData = new FormData(form);
           const requestId = formData.get('draft_id');
 
+          if (!requestId) {
+            alert('Could not determine Request ID. Please save the draft and try again.');
+            return;
+          }
+
           const response = await fetch('/api/requestor/submit-request', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -986,6 +993,18 @@ export class RequestWizard {
       // Simple CAC submission - let server handle certificate validation
       async function submitWithCACSignature(requestId) {
         try {
+          // If requestId was not passed correctly, re-read it from the form
+          if (!requestId) {
+            const form = document.getElementById('aft-request-form');
+            const formData = new FormData(form);
+            requestId = formData.get('draft_id');
+          }
+
+          if (!requestId) {
+            alert('Could not determine Request ID. Please save the draft and try again.');
+            return;
+          }
+
           const response = await fetch('/api/requestor/submit-request', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
