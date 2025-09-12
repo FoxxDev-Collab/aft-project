@@ -22,11 +22,13 @@ initializeSecurity();
 // Main server
 Bun.serve({
   port: 3001,
-  tls: {
-    // For CAC authentication, we need to request client certificates
-    requestCert: true,
-    rejectUnauthorized: false, // We'll validate certificates manually
-  },
+  // TODO: Add TLS configuration for CAC authentication when certificates are available
+  // tls: {
+  //   cert: Bun.file("cert.pem"), // Server certificate
+  //   key: Bun.file("key.pem"),   // Server private key
+  //   requestCert: true,          // Request client certificates
+  //   rejectUnauthorized: false,  // We'll validate certificates manually
+  // },
   
   async fetch(request: Request, server: any): Promise<Response> {
     const url = new URL(request.url);
