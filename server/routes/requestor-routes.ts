@@ -233,16 +233,16 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
                   </div>
                   <div>
                     <label class="text-sm font-medium text-gray-600">Certificate Valid From</label>
-                    <div class="text-gray-900">${new Date(cacSignature.certificate_valid_from).toLocaleDateString()}</div>
+                    <div class="text-gray-900">${new Date(cacSignature.certificate_not_before * 1000).toLocaleDateString()}</div>
                   </div>
                   <div>
                     <label class="text-sm font-medium text-gray-600">Certificate Valid To</label>
-                    <div class="text-gray-900">${new Date(cacSignature.certificate_valid_to).toLocaleDateString()}</div>
+                    <div class="text-gray-900">${new Date(cacSignature.certificate_not_after * 1000).toLocaleDateString()}</div>
                   </div>
                 </div>
                 <div class="mt-4 pt-4 border-t border-green-200">
                   <label class="text-sm font-medium text-gray-600">Digital Signature Hash</label>
-                  <div class="text-gray-900 text-xs font-mono break-all bg-gray-50 p-2 rounded mt-1">${cacSignature.signature_hash}</div>
+                  <div class="text-gray-900 text-xs font-mono break-all bg-gray-50 p-2 rounded mt-1">${cacSignature.signature_data}</div>
                 </div>
                 ${cacSignature.notes ? `
                 <div class="mt-3">
