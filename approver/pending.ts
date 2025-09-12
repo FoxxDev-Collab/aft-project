@@ -16,7 +16,7 @@ export class PendingApprovalsPage {
         u.first_name || ' ' || u.last_name as requestor_name
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
-      WHERE r.status IN ('pending_approver', 'submitted')
+      WHERE r.status IN ('pending_approver', 'pending_approval', 'submitted')
       ORDER BY r.created_at DESC
     `).all() as any[];
 

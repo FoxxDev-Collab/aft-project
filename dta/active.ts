@@ -143,7 +143,7 @@ export class DTAActiveTransfers {
         key: 'transfer_workflow',
         label: 'Transfer Actions',
         render: (value: any, row: any) => {
-          const canTransfer = row.origination_scan_status === 'clean' && row.destination_scan_status === 'clean';
+          const canTransfer = !!row.origination_scan_status && !!row.destination_scan_status;
           const transferComplete = row.transfer_completed;
           const dtaSigned = row.dta_signature;
           
@@ -164,7 +164,7 @@ export class DTAActiveTransfers {
               <div class="flex flex-col space-y-2">
                 <div class="flex flex-col space-y-1">
                   <div class="text-xs text-[var(--muted-foreground)] mb-1">
-                    Status: ${transferComplete ? 'Transfer Complete' : canTransfer ? 'Ready for Transfer' : 'Awaiting Clean Scans'}
+                    Status: ${transferComplete ? 'Transfer Complete' : canTransfer ? 'Ready for Transfer' : 'Awaiting AV Scans'}
                   </div>
                   
                   ${!canTransfer ? `
@@ -173,15 +173,14 @@ export class DTAActiveTransfers {
                         <svg class="w-3 h-3 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
                         </svg>
-                        <span class="text-xs font-medium text-yellow-800">Waiting for clean AV scans</span>
+                        <span class="text-xs font-medium text-yellow-800">Waiting for AV scans to be recorded</span>
                       </div>
                     </div>
                   ` : ''}
                 </div>
                 
-                <button class="w-full px-3 py-2 text-xs font-medium rounded-md ${canTransfer ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'} transition-colors duration-200 flex items-center justify-center space-x-1" 
-                        onclick="window.location.href='/dta/transfer/${row.id}'"
-                        ${!canTransfer ? 'disabled' : ''}>
+                <button class="w-full px-3 py-2 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200 flex items-center justify-center space-x-1" 
+                        onclick="window.location.href='/dta/transfer/${row.id}'">
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
                   </svg>

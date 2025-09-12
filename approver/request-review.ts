@@ -292,7 +292,32 @@ export class RequestReviewPage {
   }
 
   private static renderApprovalActions(request: any): string {
-    if (['approved', 'rejected', 'completed', 'cancelled'].includes(request.status)) {
+    // Check if request has been processed and no longer needs approval
+    if (['approved', 'rejected', 'completed', 'cancelled', 'pending_cpso', 'pending_dta'].includes(request.status)) {
+      let statusMessage = '';
+      switch(request.status) {
+        case 'pending_cpso':
+          statusMessage = 'This request has been approved and forwarded to CPSO for review.';
+          break;
+        case 'pending_dta':
+          statusMessage = 'This request has been approved by CPSO and forwarded to DTA.';
+          break;
+        case 'approved':
+          statusMessage = 'This request has been fully approved.';
+          break;
+        case 'rejected':
+          statusMessage = 'This request has been rejected.';
+          break;
+        case 'completed':
+          statusMessage = 'This request has been completed.';
+          break;
+        case 'cancelled':
+          statusMessage = 'This request has been cancelled.';
+          break;
+        default:
+          statusMessage = `This request has already been ${request.status}.`;
+      }
+      
       return ComponentBuilder.card({
         children: `
           <div class="p-6 pb-0">
@@ -300,7 +325,7 @@ export class RequestReviewPage {
           </div>
           <div class="text-center py-4">
             <p class="text-sm text-[var(--muted-foreground)] mb-4">
-              This request has already been ${request.status === 'approved' ? 'approved' : request.status}.
+              ${statusMessage}
             </p>
             ${ComponentBuilder.button({
               children: 'Back to Pending',

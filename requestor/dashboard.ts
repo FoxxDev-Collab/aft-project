@@ -25,7 +25,6 @@ export class RequestorDashboard {
       title: 'Submit New Request',
       description: 'Create a new Assured File Transfer request',
       primaryAction: { label: 'Start Request', onClick: 'window.location.href=\'/requestor/new-request\'' },
-      secondaryAction: { label: 'Use Template', onClick: 'window.location.href=\'/requestor/templates\'' },
       status: { label: 'Ready', value: 'Available', status: 'operational' }
     });
 
@@ -140,7 +139,6 @@ export class RequestorDashboard {
             'pending_cpso': 'warning',
             'approved': 'success',
             'rejected': 'error',
-            'needs_revision': 'error',
             'completed': 'success',
             'cancelled': 'default'
           } as const;
@@ -168,9 +166,7 @@ export class RequestorDashboard {
             { label: 'View', onClick: `viewRequest(${row.id})`, variant: 'secondary' as const }
           ];
 
-          if (row.status === 'rejected' || row.status === 'needs_revision') {
-            actions.push({ label: 'Edit', onClick: `editRequest(${row.id})`, variant: 'secondary' as const });
-          }
+          // No editing allowed for any non-draft status
 
           return ComponentBuilder.tableCellActions(actions);
         }

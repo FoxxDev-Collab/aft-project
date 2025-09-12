@@ -30,7 +30,6 @@ export class DTADashboard {
       title: 'Pending DTA Approval',
       description: 'Requests waiting for data transfer administrator review',
       primaryAction: { label: 'Review Pending', onClick: 'window.location.href=\'/dta/requests?filter=pending_dta\'' },
-      secondaryAction: { label: 'Bulk Process', onClick: 'showBulkProcessModal()' },
       status: { label: 'Pending', value: dtaPendingRequests?.count?.toString() || '0', status: dtaPendingRequests?.count > 0 ? 'warning' : 'operational' }
     });
 
@@ -38,17 +37,9 @@ export class DTADashboard {
       title: 'Active Transfers',
       description: 'Currently processing data transfers',
       primaryAction: { label: 'Monitor Transfers', onClick: 'window.location.href=\'/dta/active\'' },
-      secondaryAction: { label: 'Performance', onClick: 'window.location.href=\'/dta/reports/performance\'' },
       status: { label: 'Active', value: activeTransfers?.count?.toString() || '0', status: activeTransfers?.count > 0 ? 'info' : 'operational' }
     });
 
-    const dataManagementCard = Templates.adminCard({
-      title: 'Data Management',
-      description: 'Manage transfer data, storage, and cleanup processes',
-      primaryAction: { label: 'Data Center', onClick: 'window.location.href=\'/dta/data\'' },
-      secondaryAction: { label: 'Storage Reports', onClick: 'window.location.href=\'/dta/reports/storage\'' },
-      status: { label: 'Storage', value: this.getStorageStatus(), status: 'operational' }
-    });
 
 
     // Build recent requests table
@@ -100,10 +91,10 @@ export class DTADashboard {
         })}
         
         ${ComponentBuilder.grid({
-          cols: 3,
+          cols: 2,
           gap: 'lg',
           responsive: true,
-          children: [pendingRequestsCard, activeTransfersCard, dataManagementCard].join('')
+          children: [pendingRequestsCard, activeTransfersCard].join('')
         })}
         
         <div>
@@ -209,10 +200,6 @@ export class DTADashboard {
     });
   }
 
-  private static getStorageStatus(): string {
-    // Simulated storage status
-    return '82% Used';
-  }
 
   private static getSuccessRate(total: number): string {
     if (total === 0) return '0%';
@@ -220,11 +207,4 @@ export class DTADashboard {
     return '98.5%';
   }
 
-  static getScript(): string {
-    return `
-      function showBulkProcessModal() {
-        alert('Bulk processing interface would be displayed here.\\n\\nThis would allow DTA to process multiple pending requests at once.');
-      }
-    `;
-  }
 }

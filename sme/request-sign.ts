@@ -3,6 +3,8 @@ import { ComponentBuilder, Templates } from "../components/ui/server-components"
 import { SMENavigation, type SMEUser } from "./sme-nav";
 import { getDb } from "../lib/database-bun";
 import { FileTextIcon, UserIcon, CalendarIcon, ShieldIcon, ServerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, ClockIcon, EditIcon } from "../components/icons";
+import { CACPinModal } from "../components/cac-pin-modal";
+import { CACSignatureManager } from "../lib/cac-signature";
 
 export class SMERequestSignPage {
   static async render(user: SMEUser, requestId: string): Promise<string> {
@@ -38,6 +40,9 @@ export class SMERequestSignPage {
       WHERE request_id = ? 
       ORDER BY created_at DESC
     `).all(requestId) as any[];
+
+    // Get existing CAC signatures
+    const cacSignatures = CACSignatureManager.getRequestSignatures(parseInt(requestId));
 
     // Drive tracking is now handled through the media_drives table
     const driveTracking: any[] = [];

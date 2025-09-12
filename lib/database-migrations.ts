@@ -135,16 +135,7 @@ export function runApproverMigrations() {
       ON aft_request_history(request_id)
     `);
     
-    // Update existing requests to have pending_approval status if they have submitted status
-    const result = db.run(`
-      UPDATE aft_requests 
-      SET status = 'pending_approval' 
-      WHERE status = 'submitted' OR status = 'pending_approver'
-    `);
-    
-    if (result.changes > 0) {
-      console.log(`✓ Updated ${result.changes} requests to pending_approval status`);
-    }
+    // Don't modify existing statuses - let the application handle them
     
     console.log("✓ Approver migrations completed successfully");
     

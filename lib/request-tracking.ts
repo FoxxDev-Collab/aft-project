@@ -376,6 +376,7 @@ export class RequestTrackingService {
       SELECT 
         r.id, r.request_number, r.requestor_name, r.status, r.created_at, 
         r.updated_at, r.transfer_type, r.classification,
+        r.source_system, r.dest_system, r.dta_id, r.selected_drive_id,
         COUNT(al.id) as audit_count,
         MAX(al.created_at) as last_activity
       FROM aft_requests r

@@ -31,8 +31,7 @@ export async function handleDTARoutes(request: Request, path: string, ipAddress:
       const dashboardHtml = await DTADashboard.render(user, userId);
       return new Response(createHtmlPage(
         "AFT - DTA Dashboard",
-        dashboardHtml,
-        DTADashboard.getScript()
+        dashboardHtml
       ), {
         headers: { "Content-Type": "text/html" }
       });

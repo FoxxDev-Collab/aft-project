@@ -47,6 +47,13 @@ export class DTATransferForm {
 
   private static buildTransferForm(request: any, smeUsers: any[]): string {
     const currentStep = this.getCurrentStep(request);
+    const submitText = this.getSubmitButtonText(currentStep, request);
+    const submitButton = submitText ? `
+                <button type="submit" 
+                        class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:bg-[var(--primary)]/90">
+                  ${submitText}
+                </button>
+              ` : '';
     
     return `
       <div class="max-w-4xl mx-auto space-y-6">
@@ -98,10 +105,7 @@ export class DTATransferForm {
                         class="px-4 py-2 border border-[var(--border)] rounded-md text-[var(--foreground)] hover:bg-[var(--muted)]">
                   Save Progress
                 </button>
-                <button type="submit" 
-                        class="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:bg-[var(--primary)]/90">
-                  ${this.getSubmitButtonText(currentStep)}
-                </button>
+                ${submitButton}
               </div>
             </div>
           </div>
@@ -112,10 +116,17 @@ export class DTATransferForm {
 
   private static getCurrentStep(request: any): number {
     if (!request.origination_scan_status || !request.destination_scan_status) return 1;
-    if (request.origination_scan_status !== 'clean' || request.destination_scan_status !== 'clean') return 1;
     if (!request.transfer_completed_date) return 2;
     if (!request.dta_signature_date) return 3;
     return 4; // Complete
+  }
+
+  private static isStepAccessible(stepNumber: number, request: any): boolean {
+    const currentStep = this.getCurrentStep(request);
+    // Unlock signature step as soon as both AV scans are recorded (no need to click Complete Transfer)
+    const scansRecorded = !!request.origination_scan_status && !!request.destination_scan_status;
+    if (stepNumber === 3 && scansRecorded) return true;
+    return stepNumber <= currentStep;
   }
 
   private static buildProgressSteps(currentStep: number): string {
@@ -229,7 +240,7 @@ export class DTATransferForm {
   private static buildTransferSection(request: any, currentStep: number): string {
     const isActive = currentStep === 2;
     const isComplete = currentStep > 2;
-    const canTransfer = request.origination_scan_status === 'clean' && request.destination_scan_status === 'clean';
+    const canTransfer = !!request.origination_scan_status && !!request.destination_scan_status;
     
     return `
       <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6 ${!isActive && !isComplete ? 'opacity-50' : ''}">
@@ -247,7 +258,7 @@ export class DTATransferForm {
         ${!canTransfer && !isComplete ? `
           <div class="bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-lg p-4 mb-4">
             <div class="text-sm text-[var(--warning)]">
-              ⚠️ Transfer cannot proceed until both origination and destination scans are clean.
+              ⚠️ Transfer cannot proceed until both origination and destination AV scans are recorded.
             </div>
           </div>
         ` : ''}
@@ -287,25 +298,34 @@ export class DTATransferForm {
   private static buildSignatureSection(request: any, smeUsers: any[], currentStep: number): string {
     const isActive = currentStep === 3;
     const isComplete = currentStep > 3;
+    const isAccessible = this.isStepAccessible(3, request);
+    const scansRecorded = !!request.origination_scan_status && !!request.destination_scan_status;
     
     return `
-      <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6 ${!isActive && !isComplete ? 'opacity-50' : ''}">
+      <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6 ${!isAccessible ? 'opacity-50' : ''}">
         <div class="flex items-center gap-2 mb-4">
           <div class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
             isComplete ? 'bg-[var(--success)] text-white' : 
-            isActive ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 
+            isAccessible ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 
             'bg-[var(--muted)] text-[var(--muted-foreground)]'
           }">
             ${isComplete ? '✓' : '3'}
           </div>
           <h3 class="text-lg font-semibold text-[var(--foreground)]">DTA Signature & SME Assignment</h3>
+          ${scansRecorded && !isComplete ? `
+            <div class="ml-auto">
+              <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[var(--info)]/10 text-[var(--info)]">
+                Ready for Signature
+              </span>
+            </div>
+          ` : ''}
         </div>
 
         <div class="space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="text-sm font-medium text-[var(--foreground)]">Assign SME for Two-Person Integrity</label>
-              <select name="smeUserId" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" ${!isActive ? 'disabled' : ''} required>
+              <select name="smeUserId" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" ${!isAccessible ? 'disabled' : ''} required>
                 <option value="">Select SME...</option>
                 ${smeUsers.map(sme => `
                   <option value="${sme.id}" ${request.assigned_sme_id === sme.id ? 'selected' : ''}>
@@ -318,17 +338,17 @@ export class DTATransferForm {
               <label class="text-sm font-medium text-[var(--foreground)]">DTA Signature Date/Time</label>
               <input type="datetime-local" name="dtaSignatureDateTime" 
                      class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
-                     ${!isActive ? 'disabled' : ''} value="${request.dta_signature_date ? new Date(request.dta_signature_date * 1000).toISOString().slice(0, 16) : ''}">
+                     ${!isAccessible ? 'disabled' : ''} value="${request.dta_signature_date ? new Date(request.dta_signature_date * 1000).toISOString().slice(0, 16) : ''}">
             </div>
           </div>
 
           <div>
             <label class="text-sm font-medium text-[var(--foreground)]">DTA Signature Notes</label>
             <textarea name="dtaSignatureNotes" rows="3" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
-                      placeholder="DTA certification notes, compliance verification, etc." ${!isActive ? 'disabled' : ''}></textarea>
+                      placeholder="DTA certification notes, compliance verification, etc." ${!isAccessible ? 'disabled' : ''}></textarea>
           </div>
 
-          ${isActive ? `
+          ${isAccessible && !isComplete ? `
             <div class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
               <div class="text-sm text-[var(--info)]">
                 ℹ️ By signing this transfer, you certify that all Section 4 procedures have been completed according to AFT requirements.
@@ -346,12 +366,17 @@ export class DTATransferForm {
     `;
   }
 
-  private static getSubmitButtonText(currentStep: number): string {
+  private static getSubmitButtonText(currentStep: number, request: any): string {
+    // If transfer is completed but not signed, allow signature
+    if (request.transfer_completed_date && !request.dta_signature_date) {
+      return 'Sign & Assign SME';
+    }
+    
     switch (currentStep) {
       case 1: return 'Record AV Scan Results';
       case 2: return 'Complete Transfer';
       case 3: return 'Sign & Assign SME';
-      default: return 'Update';
+      default: return '';
     }
   }
 
@@ -406,6 +431,35 @@ export class DTATransferForm {
         }
       });
       
+      // Auto-save when transfer completion fields are filled
+      document.addEventListener('DOMContentLoaded', function() {
+        const transferDateField = document.querySelector('input[name="transferDateTime"]');
+        const filesTransferredField = document.querySelector('input[name="filesTransferred"]');
+        
+        if (transferDateField && filesTransferredField) {
+          const autoSaveTransfer = debounce(() => {
+            if (transferDateField.value && filesTransferredField.value) {
+              saveProgressSilent();
+            }
+          }, 2000);
+          
+          transferDateField.addEventListener('change', autoSaveTransfer);
+          filesTransferredField.addEventListener('input', autoSaveTransfer);
+        }
+      });
+      
+      function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+          const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+          };
+          clearTimeout(timeout);
+          timeout = setTimeout(later, wait);
+        };
+      }
+      
       function saveProgress() {
         const form = document.getElementById('transferForm');
         const formData = new FormData(form);
@@ -428,6 +482,28 @@ export class DTATransferForm {
         .catch(error => {
           console.error('Error saving progress:', error);
           alert('Failed to save progress. Please try again.');
+        });
+      }
+      
+      function saveProgressSilent() {
+        const form = document.getElementById('transferForm');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        data.saveOnly = true;
+        
+        fetch('/api/dta/transfer-form', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+          if (!result.success) {
+            console.warn('Auto-save failed:', result.error);
+          }
+        })
+        .catch(error => {
+          console.warn('Auto-save error:', error);
         });
       }
     `;

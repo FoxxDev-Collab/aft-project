@@ -336,10 +336,18 @@ export class MediaCustodianRequests {
 
     // Get timeline data
     const timeline = RequestTrackingService.getRequestTimeline(requestId);
+    
+    // Get request history with comments
+    const history = db.query(`
+      SELECT * FROM aft_request_history 
+      WHERE request_id = ? 
+      ORDER BY created_at DESC
+    `).all(requestId) as any[];
 
     // Build request details view
     const requestDetails = this.buildRequestDetailsView(request, files);
     const timelineView = this.buildTimelineView(timeline?.timeline_steps || []);
+    const historyView = this.buildHistoryView(history);
 
     return `
       ${MediaCustodianNavigation.renderPageHeader(`Request ${request.request_number}`, 'View and manage AFT request details', user, '/media-custodian/requests')}
@@ -349,8 +357,9 @@ export class MediaCustodianRequests {
           ${MediaCustodianNavigation.renderBreadcrumb('/media-custodian/requests/' + requestId)}
           
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2">
+            <div class="lg:col-span-2 space-y-6">
               ${requestDetails}
+              ${historyView}
             </div>
             <div>
               ${timelineView}
@@ -709,6 +718,33 @@ export class MediaCustodianRequests {
               </button>
             ` : ''}
           </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private static buildHistoryView(history: any[]): string {
+    if (!history || history.length === 0) {
+      return '';
+    }
+
+    return `
+      <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
+        <h3 class="font-semibold text-[var(--foreground)] mb-4">Request History</h3>
+        <div class="space-y-3">
+          ${history.map(entry => `
+            <div class="flex items-start gap-3 pb-3 border-b border-[var(--border)] last:border-0">
+              <div class="w-2 h-2 rounded-full bg-[var(--primary)] mt-2"></div>
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-sm font-medium text-[var(--foreground)]">${entry.action}</span>
+                  <span class="text-xs text-[var(--muted-foreground)]">${new Date(entry.created_at * 1000).toLocaleString()}</span>
+                </div>
+                ${entry.notes ? `<p class="text-sm text-[var(--muted-foreground)]">${entry.notes}</p>` : ''}
+                <p class="text-xs text-[var(--muted-foreground)]">by ${entry.user_email}</p>
+              </div>
+            </div>
+          `).join('')}
         </div>
       </div>
     `;

@@ -178,17 +178,16 @@ function getDashboardData(db: any): Response {
 }
 
 function getAllRequests(db: any, userId?: number): Response {
-  // For DTA, show assigned requests including those needing revision
+  // For DTA, show assigned requests
   const requests = db.query(`
     SELECT * FROM aft_requests 
     WHERE dta_id = ? 
-    AND status IN ('pending_dta', 'active_transfer', 'needs_revision', 'pending_sme_signature', 'pending_media_custodian', 'completed')
+    AND status IN ('pending_dta', 'active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed')
     ORDER BY 
       CASE 
-        WHEN status = 'needs_revision' THEN 1
-        WHEN status = 'pending_dta' THEN 2
-        WHEN status = 'active_transfer' THEN 3
-        ELSE 4
+        WHEN status = 'pending_dta' THEN 1
+        WHEN status = 'active_transfer' THEN 2
+        ELSE 3
       END,
       updated_at DESC
     LIMIT 100
@@ -340,8 +339,8 @@ async function approveRequest(db: any, requestId: number, body: any, userId: num
     });
   }
 
-  if (request.status !== 'pending_dta' && request.status !== 'needs_revision') {
-    return new Response(JSON.stringify({ error: 'Request is not pending DTA approval or revision' }), {
+  if (request.status !== 'pending_dta') {
+    return new Response(JSON.stringify({ error: 'Request is not pending DTA approval' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
     });
@@ -844,9 +843,9 @@ async function signDTARequest(db: any, requestId: number, body: any, userId: num
     });
   }
 
-  // Check if transfer is completed
-  if (!request.transfer_completed_date) {
-    return new Response(JSON.stringify({ error: 'Transfer must be marked as complete before DTA signature' }), {
+  // Require that both AV scans are recorded before allowing signature
+  if (!request.origination_scan_performed || !request.destination_scan_performed) {
+    return new Response(JSON.stringify({ error: 'Both origination and destination AV scans must be recorded before DTA signature' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
     });
@@ -950,12 +949,15 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
   }
 
   try {
+    let transferCompletedPerformed = false;
+    let dtaSignedPerformed = false;
     // Handle AV scan updates
     if (formData.originationScanResult || formData.destinationScanResult) {
       if (formData.originationScanResult && formData.originationFilesScanned) {
         db.query(`
           UPDATE aft_requests 
-          SET origination_scan_status = ?, 
+          SET origination_scan_performed = 1,
+              origination_scan_status = ?, 
               origination_files_scanned = ?, 
               updated_at = unixepoch()
           WHERE id = ?
@@ -975,7 +977,8 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
       if (formData.destinationScanResult && formData.destinationFilesScanned) {
         db.query(`
           UPDATE aft_requests 
-          SET destination_scan_status = ?, 
+          SET destination_scan_performed = 1,
+              destination_scan_status = ?, 
               destination_files_scanned = ?, 
               updated_at = unixepoch()
           WHERE id = ?
@@ -995,11 +998,11 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
 
     // Handle transfer completion
     if (formData.filesTransferred && !saveOnly) {
-      // Re-fetch the request after potential scan updates to ensure we have the latest statuses
+      // Re-fetch the request after potential scan updates to ensure we have the latest flags
       const latestRequest = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
-      const canTransfer = latestRequest.origination_scan_status === 'clean' && latestRequest.destination_scan_status === 'clean';
+      const canTransfer = !!latestRequest.origination_scan_performed && !!latestRequest.destination_scan_performed;
       if (!canTransfer) {
-        return new Response(JSON.stringify({ error: 'Both scans must be clean before completing transfer' }), {
+        return new Response(JSON.stringify({ error: 'Both scans must be recorded before completing transfer' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -1024,14 +1027,15 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
         JSON.stringify({ filesTransferred: formData.filesTransferred, notes: formData.transferNotes }),
         `Transfer completed: ${formData.filesTransferred} files transferred. ${formData.transferNotes || ''}`
       );
+      transferCompletedPerformed = true;
     }
 
-    // Handle DTA signature and SME assignment
+    // Handle DTA signature and SME assignment - allow if transfer is completed
     if (formData.smeUserId && formData.dtaSignatureDateTime && !saveOnly) {
-      // Verify transfer is completed
+      // Re-check request to get latest scan flags after potential updates
       const updatedRequest = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId);
-      if (!updatedRequest.transfer_completed_date) {
-        return new Response(JSON.stringify({ error: 'Transfer must be completed before DTA signature' }), {
+      if (!updatedRequest.origination_scan_performed || !updatedRequest.destination_scan_performed) {
+        return new Response(JSON.stringify({ error: 'Both origination and destination AV scans must be recorded before DTA signature' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -1076,6 +1080,7 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
       );
 
       await auditLog(userId, 'DTA_SIGNATURE_FORM', `Signed request #${requestId} via transfer form`, ipAddress, { requestId, smeUserId: formData.smeUserId });
+      dtaSignedPerformed = true;
     }
 
     // Add scan notes if provided
@@ -1096,7 +1101,9 @@ async function handleTransferFormSubmission(db: any, body: any, userId: number, 
     return new Response(JSON.stringify({ 
       success: true, 
       message,
-      requestId 
+      requestId,
+      transferCompleted: transferCompletedPerformed,
+      movedToPendingSME: dtaSignedPerformed
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1134,20 +1141,6 @@ async function completeTransfer(db: any, requestId: number, body: any, userId: n
       requiresScans: {
         origination: !request.origination_scan_performed,
         destination: !request.destination_scan_performed
-      }
-    }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  // If threats were found, prevent completion
-  if (request.origination_threats_found > 0 || request.destination_threats_found > 0) {
-    return new Response(JSON.stringify({ 
-      error: 'Transfer cannot be completed due to malware/virus threats found during scanning',
-      threats: {
-        origination: request.origination_threats_found,
-        destination: request.destination_threats_found
       }
     }), {
       status: 400,

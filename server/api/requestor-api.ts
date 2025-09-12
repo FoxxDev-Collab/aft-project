@@ -2,6 +2,7 @@
 import { getDb, UserRole, generateRequestNumber } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
 import { RoleMiddleware } from "../../middleware/role-middleware";
+import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
 
 const db = getDb();
 
@@ -109,6 +110,22 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
       if (requestData.draft_id && requestData.draft_id !== '') {
         // Update existing draft
         requestId = parseInt(requestData.draft_id);
+        
+        // Check if request is rejected - prevent editing
+        const existingRequest = db.query(`
+          SELECT status FROM aft_requests WHERE id = ? AND requestor_id = ?
+        `).get(requestId, authResult.session.userId) as any;
+        
+        if (existingRequest?.status === 'rejected') {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            message: 'Rejected requests cannot be modified. Please create a new request.' 
+          }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        
         // If request_number collides with another record, make it unique (excluding this draft id)
         requestData.media_control_number = ensureUniqueRequestNumber(requestData.media_control_number, requestId);
         
@@ -256,12 +273,22 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
     if (authResult.response) return authResult.response;
     
     try {
-      const { requestId, signature } = await request.json() as any;
+      const { requestId, signatureMethod, manualSignature, cacSignature } = await request.json() as any;
       
       if (!requestId) {
         return new Response(JSON.stringify({ 
           success: false, 
           message: 'Request ID is required' 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (!signatureMethod || !['manual', 'cac'].includes(signatureMethod)) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          message: 'Valid signature method is required (manual or cac)' 
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
@@ -284,76 +311,112 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         });
       }
       
-      if (!['draft','rejected'].includes(existingRequest.status)) {
+      if (!['draft'].includes(existingRequest.status)) {
         return new Response(JSON.stringify({ 
           success: false, 
-          message: 'Only draft or rejected requests can be submitted' 
+          message: 'Only draft requests can be submitted' 
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         });
       }
-      
+
       // Determine initial status based on transfer type
       // High-to-Low transfers require DAO review first, others go directly to approver
       const nextStatus = existingRequest.transfer_type === 'high-to-low' ? 'pending_dao' : 'pending_approver';
       
+      // Handle signature based on method
+      let signatureResult;
+      
+      if (signatureMethod === 'cac') {
+        // Real CAC signature processing
+        if (!cacSignature || !cacSignature.signature || !cacSignature.certificate) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            message: 'CAC signature and certificate are required' 
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Apply the real CAC signature using the CACSignatureManager
+        signatureResult = await CACSignatureManager.applySignature(
+          requestId,
+          authResult.session.userId,
+          authResult.session.email,
+          cacSignature as CACSignatureData,
+          ipAddress
+        );
+
+        if (!signatureResult.success) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            message: signatureResult.error || 'Failed to apply CAC signature' 
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+      } else if (signatureMethod === 'manual') {
+        // Manual signature processing
+        if (!manualSignature || manualSignature.trim() === '') {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            message: 'Manual signature (full name) is required' 
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Store manual signature record
+        db.query(`
+          INSERT INTO manual_signatures (
+            request_id, signer_id, signer_email, signature_text,
+            certification_statement, signature_timestamp, ip_address, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+        `).run(
+          requestId,
+          authResult.session.userId,
+          authResult.session.email,
+          manualSignature.trim(),
+          'I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts and comply with all applicable security requirements.',
+          new Date().toISOString(),
+          ipAddress
+        );
+      }
+
+      // Update request status
       db.query(`
         UPDATE aft_requests SET
           status = ?,
           rejection_reason = NULL,
-          updated_at = unixepoch()
+          updated_at = unixepoch(),
+          signature_method = ?,
+          submitted_at = unixepoch()
         WHERE id = ?
-      `).run(nextStatus, requestId);
+      `).run(nextStatus, signatureMethod, requestId);
       
-      // Create digital signature record (simplified - in real implementation would use CAC)
-      db.query(`
-        INSERT INTO cac_signatures (
-          request_id, user_id, step_type, certificate_subject, certificate_issuer,
-          certificate_serial, certificate_thumbprint, certificate_not_before, 
-          certificate_not_after, signature_data, signed_data, signature_reason,
-          ip_address, user_agent, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
-      `).run(
-        requestId,
-        authResult.session.userId,
-        'REQUESTER_CERTIFICATION',
-        `CN=${authResult.session.email}`,
-        'AFT System',
-        'SIM-' + Date.now(),
-        'SHA256:' + Math.random().toString(36),
-        Math.floor(Date.now() / 1000),
-        Math.floor(Date.now() / 1000) + (365 * 24 * 3600), // 1 year from now
-        signature.timestamp,
-        'AFT Request Certification',
-        'I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts on the ACDS contract.',
-        ipAddress,
-        signature.userAgent || 'Unknown'
-      );
+      // History: mark submission with signature method
+      const historyNote = signatureMethod === 'cac' 
+        ? 'Request submitted with CAC digital signature' 
+        : 'Request submitted with manual signature';
       
-      // History: mark resubmission if coming from rejected
       try {
-        if (existingRequest.status === 'rejected') {
-          db.query(`
-            INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
-            VALUES (?, 'RESUBMITTED', ?, 'Request resubmitted by requestor', unixepoch())
-          `).run(requestId, authResult.session.email);
-        } else {
-          db.query(`
-            INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
-            VALUES (?, 'SUBMITTED', ?, 'Request submitted by requestor', unixepoch())
-          `).run(requestId, authResult.session.email);
-        }
+        db.query(`
+          INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
+          VALUES (?, 'SUBMITTED', ?, ?, unixepoch())
+        `).run(requestId, authResult.session.email, historyNote);
       } catch {}
 
       await auditLog(authResult.session.userId, 'AFT_REQUEST_SUBMITTED', 
-        `AFT request ${existingRequest.status === 'rejected' ? 'resubmitted' : 'submitted'} for approval: ${existingRequest.request_number}`, ipAddress);
+        `AFT request submitted for approval: ${existingRequest.request_number} (${signatureMethod} signature)`, ipAddress);
       
       return new Response(JSON.stringify({ 
         success: true, 
-        message: existingRequest.status === 'rejected' 
-          ? 'Request resubmitted successfully and is now pending ISSM/ISSO review'
-          : 'Request submitted successfully and is now pending ISSM/ISSO review',
+        message: 'Request submitted successfully and is now pending ISSM/ISSO review',
         status: 'submitted'
       }), {
         headers: { 'Content-Type': 'application/json' }

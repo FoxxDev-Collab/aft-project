@@ -64,7 +64,13 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         
         // Update request status - approver sends to CPSO, CPSO sends to DTA
         const newStatus = activeRole === UserRole.CPSO ? 'pending_dta' : 'pending_cpso';
-        db.prepare(`
+        
+        // Only allow approval if request is in the correct pending state for this role
+        const allowedStatuses = activeRole === UserRole.CPSO 
+          ? ['pending_cpso']  // CPSO can only approve requests pending CPSO review
+          : ['pending_approver', 'submitted', 'pending_approval'];  // APPROVER can approve initial submissions
+        
+        const result = db.prepare(`
           UPDATE aft_requests 
           SET status = ?, 
               approver_email = ?,
@@ -72,8 +78,41 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
               updated_at = unixepoch(),
               approval_notes = ?,
               rejection_reason = NULL
-          WHERE id = ? AND status IN ('pending_approver','pending_cpso','submitted','pending_approval','needs_revision')
-        `).run(newStatus, session.email, session.email, notes || null, requestId);
+          WHERE id = ? AND status IN (${allowedStatuses.map(() => '?').join(',')})
+        `).run(newStatus, session.email, session.email, notes || null, requestId, ...allowedStatuses);
+        
+        // Check if the update actually affected any rows (prevents double approval)
+        if (result.changes === 0) {
+          const currentRequest = db.query('SELECT status FROM aft_requests WHERE id = ?').get(requestId) as any;
+          let errorMessage = 'This request cannot be approved at this time.';
+          
+          if (currentRequest) {
+            switch(currentRequest.status) {
+              case 'pending_cpso':
+                errorMessage = 'This request has already been approved and is pending CPSO review.';
+                break;
+              case 'pending_dta':
+                errorMessage = 'This request has already been approved by CPSO and is pending DTA assignment.';
+                break;
+              case 'approved':
+                errorMessage = 'This request has already been fully approved.';
+                break;
+              case 'rejected':
+                errorMessage = 'This request has been rejected and cannot be approved.';
+                break;
+              case 'completed':
+                errorMessage = 'This request has already been completed.';
+                break;
+              default:
+                errorMessage = `This request is in "${currentRequest.status}" status and cannot be approved by your role.`;
+            }
+          }
+          
+          return new Response(JSON.stringify({ error: errorMessage }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         
         // Add to history
         const historyAction = activeRole === UserRole.CPSO ? 'CPSO_APPROVED' : 'ISSM_APPROVED';
@@ -115,22 +154,62 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           });
         }
         
-        // Update request status to 'needs_revision' to preserve all data and allow editing
-        db.prepare(`
+        // Update request status to 'rejected' - rejected requests cannot be edited
+        // Only allow rejection if request is in the correct pending state for this role
+        const allowedStatuses = activeRole === UserRole.CPSO 
+          ? ['pending_cpso']  // CPSO can only reject requests pending CPSO review
+          : ['pending_approver', 'submitted', 'pending_approval'];  // APPROVER can reject initial submissions
+        
+        const result = db.prepare(`
           UPDATE aft_requests 
-          SET status = 'needs_revision',
+          SET status = 'rejected',
               approver_email = ?,
               approver_id = (SELECT id FROM users WHERE email = ?),
               updated_at = unixepoch(),
               rejection_reason = ?,
               approval_notes = ?
-          WHERE id = ? AND status IN ('pending_approver','pending_cpso','submitted','pending_approval')
-        `).run(session.email, session.email, reason, notes || null, requestId);
+          WHERE id = ? AND status IN (${allowedStatuses.map(() => '?').join(',')})
+        `).run(session.email, session.email, reason, notes || null, requestId, ...allowedStatuses);
+        
+        // Check if the update actually affected any rows
+        if (result.changes === 0) {
+          const currentRequest = db.query('SELECT status FROM aft_requests WHERE id = ?').get(requestId) as any;
+          let errorMessage = 'This request cannot be rejected at this time.';
+          
+          if (currentRequest) {
+            switch(currentRequest.status) {
+              case 'pending_cpso':
+                if (activeRole !== UserRole.CPSO) {
+                  errorMessage = 'This request has already been approved and is pending CPSO review. Only CPSO can reject it now.';
+                }
+                break;
+              case 'pending_dta':
+                errorMessage = 'This request has already been approved by CPSO and cannot be rejected at this stage.';
+                break;
+              case 'approved':
+                errorMessage = 'This request has already been fully approved and cannot be rejected.';
+                break;
+              case 'rejected':
+                errorMessage = 'This request has already been rejected.';
+                break;
+              case 'completed':
+                errorMessage = 'This request has already been completed and cannot be rejected.';
+                break;
+              default:
+                errorMessage = `This request is in "${currentRequest.status}" status and cannot be rejected by your role.`;
+            }
+          }
+          
+          return new Response(JSON.stringify({ error: errorMessage }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         
         // Add to history
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
-          VALUES (?, 'REJECTED_FOR_REVISION', ?, ?, unixepoch())
+          VALUES (?, 'REJECTED', ?, ?, unixepoch())
         `).run(requestId, session.email, `Reason: ${reason}. ${notes || ''}`);
         
         // Log the action

@@ -3,6 +3,7 @@ import { ComponentBuilder } from "../components/ui/server-components";
 import { FormComponents } from "../components/ui/form-components";
 import { RequestorNavigation, type RequestorUser } from "./requestor-nav";
 import { getDb, generateRequestNumber, type AFTRequest } from "../lib/database-bun";
+import { CACPinModal } from "../components/cac-pin-modal";
 
 export interface AFTRequestDraft {
   // Section I
@@ -90,50 +91,60 @@ export class RequestWizard {
         sectionNumber: 'I'
       })}
       
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        ${FormComponents.formField({
-          label: 'Assigned Data Transfer Agent (DTA)',
-          required: true,
-          description: 'Select the DTA responsible for this transfer',
-          children: FormComponents.select({
-            name: 'dta_id',
-            value: existingDraft?.dta_id?.toString() || '',
-            placeholder: 'Select a DTA',
-            required: true,
-            options: []
-          })
-        })}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
+          <h3 class="text-sm font-semibold text-[var(--foreground)]">Assignment</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ${FormComponents.formField({
+              label: 'Assigned Data Transfer Agent (DTA)',
+              required: true,
+              description: 'Select the DTA responsible for this transfer',
+              children: FormComponents.select({
+                name: 'dta_id',
+                value: existingDraft?.dta_id?.toString() || '',
+                placeholder: 'Select a DTA',
+                required: true,
+                options: []
+              })
+            })}
+            
+            ${FormComponents.formField({
+              label: 'Media Control Number',
+              description: 'Unique identifier for this media transfer',
+              children: FormComponents.textInput({
+                name: 'media_control_number',
+                value: existingDraft?.request_number || '',
+                maxLength: 50
+              })
+            })}
+          </div>
+        </div>
         
-        ${FormComponents.formField({
-          label: 'Media Control Number',
-          description: 'Unique identifier for this media transfer',
-          children: FormComponents.textInput({
-            name: 'media_control_number',
-            value: existingDraft?.request_number || '',
-            maxLength: 50
-          })
-        })}
-        
-        ${FormComponents.formField({
-          label: 'Media Type',
-          required: true,
-          description: 'Type of media being used for transfer',
-          children: FormComponents.select({
-            name: 'media_type',
-            value: existingDraft?.media_type || '',
-            required: true,
-            options: [
-              { value: 'SSD', label: 'SSD (Solid State Drive)' },
-              { value: 'SSD-T', label: 'SSD (Travel)' },
-              { value: 'DVD', label: 'DVD' },
-              { value: 'DVD-R', label: 'DVD (Rewritable)' },
-              { value: 'DVD-RDL', label: 'DVD (Rewritable Dual Layer)' },
-              { value: 'CD', label: 'CD' },
-              { value: 'CD-R', label: 'CD (Rewritable)' },
-              { value: 'CD-RW', label: 'CD (Rewritable Dual Layer)' }
-            ]
-          })
-        })}
+        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
+          <h3 class="text-sm font-semibold text-[var(--foreground)]">Media Details</h3>
+          <div class="grid grid-cols-1 gap-6">
+            ${FormComponents.formField({
+              label: 'Media Type',
+              required: true,
+              description: 'Type of media being used for transfer',
+              children: FormComponents.select({
+                name: 'media_type',
+                value: existingDraft?.media_type || '',
+                required: true,
+                options: [
+                  { value: 'SSD', label: 'SSD (Solid State Drive)' },
+                  { value: 'SSD-T', label: 'SSD (Travel)' },
+                  { value: 'DVD', label: 'DVD' },
+                  { value: 'DVD-R', label: 'DVD (Rewritable)' },
+                  { value: 'DVD-RDL', label: 'DVD (Rewritable Dual Layer)' },
+                  { value: 'CD', label: 'CD' },
+                  { value: 'CD-R', label: 'CD (Rewritable)' },
+                  { value: 'CD-RW', label: 'CD (Rewritable Dual Layer)' }
+                ]
+              })
+            })}
+          </div>
+        </div>
       </div>
     `;
 
@@ -145,76 +156,87 @@ export class RequestWizard {
         sectionNumber: 'II'
       })}
       
-      <div class="space-y-6">
-        <!-- Source and Destination Information -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          ${FormComponents.formField({
-            label: 'Source Information System (IS)',
-            required: true,
-            children: FormComponents.textInput({
-              name: 'source_is',
-              value: existingDraft?.source_system || '',
-              required: true,
-              maxLength: 100
-            })
-          })}
-          
-          ${FormComponents.formField({
-            label: 'Source Classification',
-            required: true,
-            children: FormComponents.select({
-              name: 'source_classification',
-              value: existingDraft?.source_classification || '',
-              required: true,
-              options: [
-                { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
-                { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
-                { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
-                { value: 'SECRET', label: 'SECRET' },
-                { value: 'TOP SECRET', label: 'TOP SECRET' },
-                { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
-              ]
-            })
-          })}
-          
-          ${FormComponents.formField({
-            label: 'Destination Information System (IS)',
-            required: true,
-            children: FormComponents.textInput({
-              name: 'destination_is',
-              value: existingDraft?.dest_system || '',
-              required: true,
-              maxLength: 100
-            })
-          })}
-          
-          ${FormComponents.formField({
-            label: 'Destination Classification',
-            required: true,
-            children: FormComponents.select({
-              name: 'destination_classification',
-              value: existingDraft?.destination_classification || '',
-              required: true,
-              options: [
-                { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
-                { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
-                { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
-                { value: 'SECRET', label: 'SECRET' },
-                { value: 'TOP SECRET', label: 'TOP SECRET' },
-                { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
-              ]
-            })
-          })}
-
-          <!-- Extra Destination rows (inline) -->
-          <div class="space-y-2">
-            <div class="flex items-center justify-between">
-              <h4 class="text-sm font-medium text-[var(--foreground)]">Add more Destinations</h4>
-              <button type="button" class="action-btn secondary" onclick="addDestination()">+ Add Destination</button>
+      <div class="space-y-8">
+        <!-- Systems & Classification -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
+            <h3 class="text-sm font-semibold text-[var(--foreground)]">Source System</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              ${FormComponents.formField({
+                label: 'Source Information System (IS)',
+                required: true,
+                children: FormComponents.textInput({
+                  name: 'source_is',
+                  value: existingDraft?.source_system || '',
+                  required: true,
+                  maxLength: 100
+                })
+              })}
+              ${FormComponents.formField({
+                label: 'Source Classification',
+                required: true,
+                children: FormComponents.select({
+                  name: 'source_classification',
+                  value: existingDraft?.source_classification || '',
+                  required: true,
+                  options: [
+                    { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
+                    { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
+                    { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
+                    { value: 'SECRET', label: 'SECRET' },
+                    { value: 'TOP SECRET', label: 'TOP SECRET' },
+                    { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
+                  ]
+                })
+              })}
             </div>
-            <div id="destinations-list" class="space-y-2"></div>
           </div>
-          
+          <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
+            <h3 class="text-sm font-semibold text-[var(--foreground)]">Primary Destination</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              ${FormComponents.formField({
+                label: 'Destination Information System (IS)',
+                required: true,
+                children: FormComponents.textInput({
+                  name: 'destination_is',
+                  value: existingDraft?.dest_system || '',
+                  required: true,
+                  maxLength: 100
+                })
+              })}
+              ${FormComponents.formField({
+                label: 'Destination Classification',
+                required: true,
+                children: FormComponents.select({
+                  name: 'destination_classification',
+                  value: existingDraft?.destination_classification || '',
+                  required: true,
+                  options: [
+                    { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' },
+                    { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' },
+                    { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' },
+                    { value: 'SECRET', label: 'SECRET' },
+                    { value: 'TOP SECRET', label: 'TOP SECRET' },
+                    { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }
+                  ]
+                })
+              })}
+            </div>
+          </div>
+        </div>
+
+        <!-- Additional Destinations -->
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-medium text-[var(--foreground)]">Additional Destinations</h4>
+            <button type="button" class="action-btn secondary" onclick="addDestination()">+ Add Destination</button>
+          </div>
+          <div id="destinations-list" class="space-y-2"></div>
+          <p class="text-xs text-[var(--muted-foreground)]">Add any additional destination systems and their classification.</p>
+        </div>
+
+        <!-- Classification & Disposition -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           ${FormComponents.formField({
             label: 'Media Disposition',
             required: true,
@@ -233,7 +255,6 @@ export class RequestWizard {
               ]
             })
           })}
-          
           ${FormComponents.formField({
             label: 'Overall Classification',
             required: true,
@@ -254,7 +275,7 @@ export class RequestWizard {
           })}
         </div>
 
-        <!-- Transfer Type and Direction -->
+        <!-- Transfer Spec -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           ${FormComponents.formField({
             label: 'Transfer Type',
@@ -271,7 +292,6 @@ export class RequestWizard {
               ]
             })
           })}
-          
           ${FormComponents.formField({
             label: 'Destination File Operation',
             required: true,
@@ -288,7 +308,7 @@ export class RequestWizard {
           })}
         </div>
 
-        <!-- Non-Human Readable Process -->
+        <!-- Process Details -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           ${FormComponents.formField({
             label: 'Process Name (If Non-Human Readable)',
@@ -299,7 +319,6 @@ export class RequestWizard {
               maxLength: 200
             })
           })}
-          
           ${FormComponents.formField({
             label: 'Procedure Document #',
             description: 'Reference document number (as applicable)',
@@ -324,98 +343,175 @@ export class RequestWizard {
           })
         })}
 
-        <!-- Number of Files -->
-        ${FormComponents.formField({
-          label: 'Number of Files for Transfer',
-          required: true,
-          children: FormComponents.textInput({
-            name: 'num_files',
-            value: existingDraft?.num_files?.toString() || '',
-            required: true
-          })
-        })}
-
-        <!-- File List -->
-        ${FormComponents.formField({
-          label: 'File Names, Types, and Classification',
-          required: true,
-          description: 'List each file with its type and classification level',
-          children: FormComponents.fileListInput({
-            files: existingDraft?.files || [],
-            maxFiles: 5
-          })
-        })}
-
-        <!-- Media Transportation -->
-        <div class="bg-[var(--muted)] p-4 rounded-md space-y-4">
-          <h4 class="font-medium text-[var(--foreground)]">Media Transportation</h4>
-          
-          ${FormComponents.formField({
-            label: 'Will media be transported outside an approved area?',
-            required: true,
-            children: FormComponents.radioGroup({
-              name: 'media_transportation',
-              value: existingDraft?.media_transportation?.toString() || '',
-              inline: true,
-              options: [
-                { value: 'true', label: 'Yes' },
-                { value: 'false', label: 'No' }
-              ]
-            })
-          })}
-          
-          <div id="transport-details" style="display: ${existingDraft?.media_transportation ? 'block' : 'none'}">
-            <div class="grid grid-cols-1 gap-4">
+        <!-- Files -->
+        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
+          <h3 class="text-sm font-semibold text-[var(--foreground)]">Files</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
               ${FormComponents.formField({
-                label: 'Media Destination',
+                label: 'Number of Files for Transfer',
+                required: true,
                 children: FormComponents.textInput({
-                  name: 'media_destination',
-                  value: existingDraft?.media_destination || '',
-                  maxLength: 200
+                  name: 'num_files',
+                  value: existingDraft?.num_files?.toString() || '',
+                  required: true
                 })
               })}
-              
+            </div>
+            <div class="md:col-span-2">
               ${FormComponents.formField({
-                label: 'Destination POC / Customer Name',
-                children: FormComponents.textInput({
-                  name: 'destination_poc',
-                  value: existingDraft?.dest_contact || '',
-                  maxLength: 100
-                })
-              })}
-              
-              ${FormComponents.formField({
-                label: 'Destination Address / Location',
-                children: FormComponents.textarea({
-                  name: 'destination_address',
-                  value: existingDraft?.dest_location || '',
-                  rows: 3
+                label: 'File Names, Types, and Classification',
+                required: true,
+                description: 'List each file with its type and classification level',
+                children: FormComponents.fileListInput({
+                  files: existingDraft?.files || [],
+                  maxFiles: 5
                 })
               })}
             </div>
           </div>
         </div>
 
-        <!-- Media Encryption -->
-        <div class="bg-[var(--muted)] p-4 rounded-md">
-          <h4 class="font-medium text-[var(--foreground)] mb-2">Media Encryption</h4>
-          <p class="text-xs text-[var(--muted-foreground)] mb-4">
-            Cryptographic mechanisms during transport outside of controlled areas shall be either an NSA or FIPS 140-2 compliant algorithm. [MP-5(4)]
+        <!-- Transport & Encryption -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-[var(--muted)] p-4 rounded-md space-y-4 border border-[var(--border)]">
+            <h4 class="font-medium text-[var(--foreground)]">Media Transportation</h4>
+            ${FormComponents.formField({
+              label: 'Will media be transported outside an approved area?',
+              required: true,
+              children: FormComponents.radioGroup({
+                name: 'media_transportation',
+                value: existingDraft?.media_transportation?.toString() || '',
+                inline: true,
+                options: [
+                  { value: 'true', label: 'Yes' },
+                  { value: 'false', label: 'No' }
+                ]
+              })
+            })}
+            <div id="transport-details" style="display: ${existingDraft?.media_transportation ? 'block' : 'none'}">
+              <div class="grid grid-cols-1 gap-4">
+                ${FormComponents.formField({
+                  label: 'Media Destination',
+                  children: FormComponents.textInput({
+                    name: 'media_destination',
+                    value: existingDraft?.media_destination || '',
+                    maxLength: 200
+                  })
+                })}
+                ${FormComponents.formField({
+                  label: 'Destination POC / Customer Name',
+                  children: FormComponents.textInput({
+                    name: 'destination_poc',
+                    value: existingDraft?.dest_contact || '',
+                    maxLength: 100
+                  })
+                })}
+                ${FormComponents.formField({
+                  label: 'Destination Address / Location',
+                  children: FormComponents.textarea({
+                    name: 'destination_address',
+                    value: existingDraft?.dest_location || '',
+                    rows: 3
+                  })
+                })}
+              </div>
+            </div>
+          </div>
+          <div class="bg-[var(--muted)] p-4 rounded-md border border-[var(--border)]">
+            <h4 class="font-medium text-[var(--foreground)] mb-2">Media Encryption</h4>
+            <p class="text-xs text-[var(--muted-foreground)] mb-4">
+              Cryptographic mechanisms during transport outside of controlled areas shall be either an NSA or FIPS 140-2 compliant algorithm. [MP-5(4)]
+            </p>
+            ${FormComponents.formField({
+              label: 'Will Media be Encrypted?',
+              required: true,
+              children: FormComponents.radioGroup({
+                name: 'media_encrypted',
+                value: existingDraft?.media_encrypted?.toString() || '',
+                inline: true,
+                options: [
+                  { value: 'true', label: 'Yes' },
+                  { value: 'false', label: 'No' }
+                ]
+              })
+            })}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Signature Section for Submission
+    const signatureSection = `
+      ${FormComponents.sectionHeader({
+        title: 'Digital Signature & Submission',
+        subtitle: 'Choose your signature method and submit the request',
+        sectionNumber: 'III'
+      })}
+      
+      <div class="space-y-6">
+        <div class="bg-[var(--muted)] border border-[var(--border)] rounded-md p-4 space-y-4">
+          <h3 class="text-sm font-semibold text-[var(--foreground)]">Signature Method</h3>
+          <p class="text-sm text-[var(--muted-foreground)]">
+            Select how you want to digitally sign this AFT request. CAC signature provides the highest level of authentication and is preferred for DOD operations.
           </p>
           
           ${FormComponents.formField({
-            label: 'Will Media be Encrypted?',
+            label: 'Choose Signature Method',
             required: true,
             children: FormComponents.radioGroup({
-              name: 'media_encrypted',
-              value: existingDraft?.media_encrypted?.toString() || '',
-              inline: true,
+              name: 'signature_method',
+              value: existingDraft?.signature_method || 'manual',
               options: [
-                { value: 'true', label: 'Yes' },
-                { value: 'false', label: 'No' }
+                { 
+                  value: 'manual', 
+                  label: 'Manual Signature',
+                  description: 'Traditional electronic signature with typed certification'
+                },
+                { 
+                  value: 'cac', 
+                  label: 'CAC Certificate Signature',
+                  description: 'Digital signature using your DOD Common Access Card (Recommended)'
+                }
               ]
             })
           })}
+          
+          <!-- Manual Signature Area -->
+          <div id="manual-signature-area" class="space-y-4" style="display: ${existingDraft?.signature_method === 'cac' ? 'none' : 'block'}">
+            <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4">
+              <h4 class="text-sm font-medium text-[var(--foreground)] mb-3">Certification Statement</h4>
+              <div class="text-sm text-[var(--muted-foreground)] mb-4 p-3 bg-[var(--muted)] rounded border-l-4 border-[var(--primary)]">
+                "I certify that the above file(s)/media to be transferred to/from the IS are required to support the development and sustainment contractual efforts and comply with all applicable security requirements."
+              </div>
+              
+              ${FormComponents.formField({
+                label: 'Type your full name to confirm certification',
+                required: true,
+                children: FormComponents.textInput({
+                  name: 'manual_signature',
+                  value: existingDraft?.manual_signature || '',
+                  placeholder: 'Type your full name here',
+                  id: 'manual-signature-input'
+                })
+              })}
+            </div>
+          </div>
+          
+          <!-- CAC Signature Area -->
+          <div id="cac-signature-area" class="space-y-4" style="display: ${existingDraft?.signature_method === 'cac' ? 'block' : 'none'}">
+            <div class="bg-[var(--card)] border border-[var(--border)] rounded-md p-4">
+              <h4 class="text-sm font-medium text-[var(--foreground)] mb-3">CAC Digital Signature</h4>
+              <div class="text-sm text-[var(--muted-foreground)] mb-4">
+                Your CAC certificate will be used to digitally sign this request, providing cryptographic proof of authenticity and integrity.
+              </div>
+              
+              <div class="flex items-center gap-3 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
+                <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
+                <span class="text-sm text-[var(--info)]">CAC signature will be applied during submission</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -449,16 +545,17 @@ export class RequestWizard {
             id="save-button"
             class="px-4 py-2 text-sm font-medium text-[var(--foreground)] bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 rounded-md transition-colors"
           >
-            Save
+            Save Draft
           </button>
           
           <button
             type="button"
-            onclick="saveAndClose()"
+            onclick="submitRequest()"
             id="submit-button"
             class="px-6 py-2 text-sm font-medium text-[var(--primary-foreground)] bg-[var(--primary)] hover:bg-[var(--primary)]/90 rounded-md transition-colors"
           >
-            Save and Close
+            Sign & Submit Request
+          </button>
         </div>
       </div>
     `;
@@ -475,9 +572,13 @@ export class RequestWizard {
           <div class="bg-[var(--card)] border border-[var(--border)] rounded-lg p-6 space-y-8" id="form-container">
             ${sectionI}
             ${sectionII}
+            ${signatureSection}
             ${formActions}
           </div>
         </form>
+        
+        <!-- CAC PIN Modal -->
+        ${CACPinModal.render(false)}
     `;
 
     return RequestorNavigation.renderLayout(
@@ -489,8 +590,59 @@ export class RequestWizard {
     );
   }
 
+  private static renderWizardSteps(draft: any): string {
+    // This will be expanded to show progress
+    return `
+      <div class="p-6 border-b border-[var(--border)]">
+        <h2 class="text-2xl font-bold text-gray-800">Assured File Transfer Request</h2>
+        <p class="text-sm text-gray-500">A step-by-step guide to submitting your request</p>
+      </div>
+    `;
+  }
+
+  private static renderWizardContent(draft: any): string {
+    const step1 = `
+      <div id="step-1" class="wizard-step">
+        ${FormComponents.sectionHeader({ title: 'Getting Started', subtitle: 'Provide the basic details for your transfer request.', sectionNumber: '1' })}
+        <div class="space-y-6 mt-6">
+          ${FormComponents.formField({ label: 'Justification for Transfer', required: true, description: 'In plain language, please explain the business need for this transfer.', children: FormComponents.textarea({ name: 'justification', value: draft?.transfer_purpose || '', rows: 4, required: true, placeholder: 'e.g., Sharing project deliverables with an external partner...' }) })}
+          ${FormComponents.formField({ label: 'Overall Classification', required: true, description: 'Select the highest classification level of any data being transferred.', children: FormComponents.select({ name: 'overall_classification', value: draft?.classification || '', required: true, options: [{ value: '', label: 'Select a classification...' }, { value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' }, { value: 'CUI', label: 'CUI (Controlled Unclassified Information)' }, { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' }, { value: 'SECRET', label: 'SECRET' }, { value: 'TOP SECRET', label: 'TOP SECRET' }, { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }] }) })}
+        </div>
+      </div>
+    `;
+
+    const step2 = `
+      <div id="step-2" class="wizard-step" style="display: none;">
+        ${FormComponents.sectionHeader({ title: 'Source & Destination', subtitle: 'Specify where the data is coming from and where it is going.', sectionNumber: '2' })}
+        <div class="space-y-6 mt-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ${FormComponents.formField({ label: 'Source System', required: true, description: 'The name of the system where the data originates.', children: FormComponents.textInput({ name: 'source_is', value: draft?.source_system || '', required: true, maxLength: 100 }) })}
+            ${FormComponents.formField({ label: 'Source Classification', required: true, children: FormComponents.select({ name: 'source_classification', value: draft?.source_classification || '', required: true, options: [{ value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' }, { value: 'CUI', label: 'CUI' }, { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' }, { value: 'SECRET', label: 'SECRET' }, { value: 'TOP SECRET', label: 'TOP SECRET' }, { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }] }) })}
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ${FormComponents.formField({ label: 'Destination System', required: true, description: 'The name of the system receiving the data.', children: FormComponents.textInput({ name: 'destination_is', value: draft?.dest_system || '', required: true, maxLength: 100 }) })}
+            ${FormComponents.formField({ label: 'Destination Classification', required: true, children: FormComponents.select({ name: 'destination_classification', value: draft?.destination_classification || '', required: true, options: [{ value: 'UNCLASSIFIED', label: 'UNCLASSIFIED' }, { value: 'CUI', label: 'CUI' }, { value: 'CONFIDENTIAL', label: 'CONFIDENTIAL' }, { value: 'SECRET', label: 'SECRET' }, { value: 'TOP SECRET', label: 'TOP SECRET' }, { value: 'TOP SECRET//SCI', label: 'TOP SECRET//SCI' }] }) })}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const step3 = `
+      <div id="step-3" class="wizard-step" style="display: none;">
+        ${FormComponents.sectionHeader({ title: 'Files & Media', subtitle: 'Detail the files being transferred and the media used.', sectionNumber: '3' })}
+        <div class="space-y-6 mt-6">
+          ${FormComponents.formField({ label: 'Number of Files', required: true, children: FormComponents.textInput({ name: 'num_files', value: draft?.num_files?.toString() || '', required: true }) })}
+          ${FormComponents.formField({ label: 'Media Type', required: true, description: 'Type of media being used for transfer.', children: FormComponents.select({ name: 'media_type', value: draft?.media_type || '', required: true, options: [{ value: 'SSD', label: 'SSD' }, { value: 'DVD', label: 'DVD' }, { value: 'CD', label: 'CD' }] }) })}
+        </div>
+      </div>
+    `;
+
+    return step1 + step2 + step3;
+  }
+
   static getScript(): string {
     return `
+      let editMode = true;
       let fileRowCount = 1;
       let destinations = [];
 
@@ -506,6 +658,23 @@ export class RequestWizard {
           radio.addEventListener('change', function() {
             const details = document.getElementById('transport-details');
             details.style.display = (this.value === 'true') ? 'block' : 'none';
+          });
+        });
+
+        // Signature method change handler
+        const signatureRadios = document.querySelectorAll('input[name="signature_method"]');
+        signatureRadios.forEach(function(radio) {
+          radio.addEventListener('change', function() {
+            const manualArea = document.getElementById('manual-signature-area');
+            const cacArea = document.getElementById('cac-signature-area');
+            
+            if (this.value === 'manual') {
+              manualArea.style.display = 'block';
+              cacArea.style.display = 'none';
+            } else if (this.value === 'cac') {
+              manualArea.style.display = 'none';
+              cacArea.style.display = 'block';
+            }
           });
         });
 
@@ -748,6 +917,108 @@ export class RequestWizard {
         try { await saveDraft(); window.location.href = '/requestor/requests'; }
         catch (e) { console.error('Failed to save and close', e); alert('Failed to save. Please try again.'); }
       }
+
+      // Streamlined submit function that handles both manual and CAC signatures
+      async function submitRequest() {
+        try {
+          const form = document.getElementById('aft-request-form');
+          const formData = new FormData(form);
+          const signatureMethod = formData.get('signature_method');
+          
+          // Always save draft first to get a request ID
+          await saveDraft();
+          const requestId = formData.get('draft_id');
+          
+          if (signatureMethod === 'cac') {
+            // Show CAC PIN modal for signature
+            showCACPinModal(requestId);
+            
+          } else if (signatureMethod === 'manual') {
+            // Use manual signature flow
+            const manualSignature = formData.get('manual_signature');
+            if (!manualSignature || manualSignature.trim() === '') {
+              alert('Please enter your full name to confirm the certification.');
+              document.getElementById('manual-signature-input').focus();
+              return;
+            }
+            
+            // Submit directly with manual signature
+            await submitWithManualSignature(manualSignature.trim());
+          } else {
+            alert('Please select a signature method.');
+          }
+        } catch (error) {
+          console.error('Error submitting request:', error);
+          alert('Failed to submit request. Please try again.');
+        }
+      }
+
+      // Submit request with manual signature
+      async function submitWithManualSignature(signature) {
+        try {
+          const form = document.getElementById('aft-request-form');
+          const formData = new FormData(form);
+          const requestId = formData.get('draft_id');
+
+          const response = await fetch('/api/requestor/submit-request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requestId: requestId,
+              signatureMethod: 'manual',
+              manualSignature: signature
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert('Request submitted successfully! It has been forwarded for review.');
+            window.location.href = '/requestor/requests';
+          } else {
+            alert('Error submitting request: ' + (result.message || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error submitting with manual signature:', error);
+          alert('Failed to submit request. Please try again.');
+        }
+      }
+
+      // Override the CAC signature submission to redirect to requests page
+      async function submitCACSignature(requestId, signatureResult) {
+        try {
+          const response = await fetch('/api/requestor/submit-request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requestId: requestId,
+              signatureMethod: 'cac',
+              cacSignature: {
+                signature: signatureResult.signature,
+                certificate: signatureResult.certificate,
+                timestamp: signatureResult.timestamp,
+                algorithm: signatureResult.algorithm
+              }
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            closeCACPinModal();
+            alert('Request signed with CAC and submitted successfully! It has been forwarded for review.');
+            window.location.href = '/requestor/requests';
+          } else {
+            showCACError('Server error: ' + (result.message || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error submitting CAC signature:', error);
+          showCACError('Failed to submit request. Please try again.');
+        }
+      }
+      
+      // Include CAC PIN Modal script
+      ${CACPinModal.getScript()}
     `;
   }
 }

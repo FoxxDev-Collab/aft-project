@@ -107,7 +107,7 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
   }
   
   const canSubmit = requestData.status === 'draft';
-  const canEdit = ['draft', 'rejected', 'needs_revision'].includes(requestData.status);
+  const canEdit = ['draft'].includes(requestData.status);
   
   const detailHtml = `
     <div class="min-h-screen bg-[var(--background)]">
@@ -130,7 +130,7 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
             <div class="border-2 border-[var(--destructive)] bg-[var(--destructive)]/10 text-[var(--destructive)] rounded-lg p-4">
               <div class="font-semibold mb-1">Request Rejected</div>
               <div class="text-sm">Reason: ${requestData.rejection_reason}</div>
-              <div class="text-xs text-[var(--muted-foreground)] mt-1">You may edit the request to address the feedback and resubmit for ISSM/ISSO review.</div>
+              <div class="text-xs text-[var(--muted-foreground)] mt-1">This request has been rejected and cannot be modified. Please create a new request if needed.</div>
             </div>
             ` : ''}
             <!-- Request Information -->
