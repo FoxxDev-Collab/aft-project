@@ -226,9 +226,23 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
                   
                   <!-- CAC Signature Info -->
                   <div id="cac-signature-area" class="mt-4 hidden">
-                    <div class="flex items-center gap-2 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
+                    <div id="cac-status-loading" class="flex items-center gap-2 p-3 bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg">
                       <div class="w-2 h-2 rounded-full bg-[var(--info)]"></div>
-                      <span class="text-sm text-[var(--info)]">CAC authentication will be performed via HTTPS client certificate</span>
+                      <span class="text-sm text-[var(--info)]">Checking for CAC certificate...</span>
+                    </div>
+                    <div id="cac-status-found" class="hidden flex items-center gap-2 p-3 bg-[var(--success)]/10 border border-[var(--success)]/20 rounded-lg">
+                      <div class="w-2 h-2 rounded-full bg-[var(--success)]"></div>
+                      <div class="flex-1">
+                        <span class="text-sm text-[var(--success)]">CAC certificate detected</span>
+                        <div id="cac-cert-details" class="text-xs text-[var(--muted-foreground)] mt-1"></div>
+                      </div>
+                    </div>
+                    <div id="cac-status-not-found" class="hidden flex items-center gap-2 p-3 bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg">
+                      <div class="w-2 h-2 rounded-full bg-[var(--destructive)]"></div>
+                      <div class="flex-1">
+                        <span class="text-sm text-[var(--destructive)]">No CAC certificate found</span>
+                        <div class="text-xs text-[var(--muted-foreground)] mt-1">Please ensure your CAC is inserted and try refreshing the page</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -336,9 +350,47 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
         } else if (this.value === 'cac') {
           manualArea.style.display = 'none';
           cacArea.style.display = 'block';
+          checkCACCertificate();
         }
       });
     });
+    
+    // Function to check for CAC certificate
+    function checkCACCertificate() {
+      const loadingStatus = document.getElementById('cac-status-loading');
+      const foundStatus = document.getElementById('cac-status-found');
+      const notFoundStatus = document.getElementById('cac-status-not-found');
+      const certDetails = document.getElementById('cac-cert-details');
+      
+      // Show loading state
+      loadingStatus.style.display = 'flex';
+      foundStatus.style.display = 'none';
+      notFoundStatus.style.display = 'none';
+      
+      // Check for client certificate
+      fetch('/api/requestor/cac-info')
+        .then(response => response.json())
+        .then(data => {
+          loadingStatus.style.display = 'none';
+          
+          if (data.hasClientCert && data.certificate) {
+            foundStatus.style.display = 'flex';
+            certDetails.innerHTML = \`Subject: \${data.certificate.subject}<br>Serial: \${data.certificate.serialNumber}\`;
+            
+            // Store certificate info for submission
+            window.cacCertificateInfo = data.certificate;
+          } else {
+            notFoundStatus.style.display = 'flex';
+            window.cacCertificateInfo = null;
+          }
+        })
+        .catch(error => {
+          console.error('Error checking CAC certificate:', error);
+          loadingStatus.style.display = 'none';
+          notFoundStatus.style.display = 'flex';
+          window.cacCertificateInfo = null;
+        });
+    }
     
     // Enable submit button when checkbox is checked
     const checkbox = document.getElementById('certify-checkbox');
@@ -358,6 +410,7 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
       
       const signatureMethod = document.querySelector('input[name="signature_method"]:checked').value;
       let manualSignature = null;
+      let cacCertificate = null;
       
       if (signatureMethod === 'manual') {
         manualSignature = document.getElementById('manual-signature').value.trim();
@@ -365,6 +418,12 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
           alert('Please enter your full name to sign the request.');
           return;
         }
+      } else if (signatureMethod === 'cac') {
+        if (!window.cacCertificateInfo) {
+          alert('No CAC certificate detected. Please ensure your CAC is inserted and try refreshing the page.');
+          return;
+        }
+        cacCertificate = window.cacCertificateInfo;
       }
       
       // Disable button and show loading state
@@ -380,7 +439,8 @@ export async function handleRequestDetailPage(request: Request, requestId: numbe
         body: JSON.stringify({
           requestId: requestId,
           signatureMethod: signatureMethod,
-          manualSignature: manualSignature
+          manualSignature: manualSignature,
+          cacCertificate: cacCertificate
         })
       })
       .then(response => response.json())

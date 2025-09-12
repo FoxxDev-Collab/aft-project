@@ -125,10 +125,11 @@ export class CACSignatureManager {
       db.exec('BEGIN TRANSACTION');
 
       // Verify request exists and is in correct state
+      // Allow both 'draft' (for requestor signatures) and 'pending_sme_signature' (for SME signatures)
       const request = db.query(`
         SELECT id, status, requestor_id 
         FROM aft_requests 
-        WHERE id = ? AND status = 'pending_sme_signature'
+        WHERE id = ? AND (status = 'pending_sme_signature' OR status = 'draft')
       `).get(requestId) as any;
 
       if (!request) {
@@ -155,26 +156,24 @@ export class CACSignatureManager {
       // Store CAC signature
       const signatureId = db.query(`
         INSERT INTO cac_signatures (
-          request_id, signer_id, signer_email,
+          request_id, user_id, step_type,
           certificate_thumbprint, certificate_subject, certificate_issuer,
-          certificate_serial, certificate_valid_from, certificate_valid_to,
-          certificate_data, signature_data, signature_hash,
-          signature_algorithm, signature_timestamp, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          certificate_serial, certificate_not_before, certificate_not_after,
+          signature_data, signed_data, signature_algorithm, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
       `).run(
-        requestId, signerId, signerEmail,
+        requestId, 
+        signerId, 
+        'requestor_signature', // step_type
         signatureData.certificate.thumbprint,
         signatureData.certificate.subject,
         signatureData.certificate.issuer,
         signatureData.certificate.serialNumber,
-        signatureData.certificate.validFrom,
-        signatureData.certificate.validTo,
-        signatureData.certificate.certificateData,
-        signatureData.signature,
-        signatureHash,
-        signatureData.algorithm,
-        signatureData.timestamp,
-        signatureData.notes || null
+        new Date(signatureData.certificate.validFrom).getTime() / 1000, // certificate_not_before (unix timestamp)
+        new Date(signatureData.certificate.validTo).getTime() / 1000, // certificate_not_after (unix timestamp)
+        signatureData.signature, // signature_data
+        JSON.stringify(signatureData), // signed_data
+        signatureData.algorithm // signature_algorithm
       ).lastInsertRowid as number;
 
       // Update request status

@@ -8,7 +8,8 @@
       "Bash(tasklist:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []
