@@ -110,7 +110,147 @@ export class CACSignatureManager {
     console.log('🔒 CAC and manual signature tables initialized');
   }
 
-  // Apply CAC signature to request
+  // Apply Approver CAC signature to request
+  static async applyApproverSignature(
+    requestId: number,
+    signerId: number,
+    signerEmail: string,
+    signatureData: CACSignatureData,
+    ipAddress: string,
+    role: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const db = getDb();
+    
+    try {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+
+      // Verify request exists and is in correct state for approval
+      const allowedStatuses = role === 'CPSO' 
+        ? ['pending_cpso']
+        : ['pending_approver', 'submitted', 'pending_approval'];
+      
+      const request = db.query(`
+        SELECT id, status 
+        FROM aft_requests 
+        WHERE id = ? AND status IN (${allowedStatuses.map(() => '?').join(',')})
+      `).get(requestId, ...allowedStatuses) as any;
+
+      if (!request) {
+        db.exec('ROLLBACK');
+        return { 
+          success: false, 
+          error: 'Request not found or not ready for approval' 
+        };
+      }
+
+      // Verify certificate validity
+      const certValid = this.verifyCertificateValidity(signatureData.certificate);
+      if (!certValid.isValid) {
+        db.exec('ROLLBACK');
+        return { 
+          success: false, 
+          error: certValid.error || 'Certificate validation failed' 
+        };
+      }
+
+      // Generate signature hash for integrity
+      const signatureHash = await this.generateSignatureHash(signatureData);
+
+      // Store CAC signature
+      const stepType = role === 'CPSO' ? 'cpso_approval' : 'approver_approval';
+      const signatureId = db.query(`
+        INSERT INTO cac_signatures (
+          request_id, user_id, step_type,
+          certificate_thumbprint, certificate_subject, certificate_issuer,
+          certificate_serial, certificate_not_before, certificate_not_after,
+          signature_data, signed_data, signature_algorithm, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+      `).run(
+        requestId, 
+        signerId, 
+        stepType,
+        signatureData.certificate.thumbprint,
+        signatureData.certificate.subject,
+        signatureData.certificate.issuer,
+        signatureData.certificate.serialNumber,
+        new Date(signatureData.certificate.validFrom).getTime() / 1000,
+        new Date(signatureData.certificate.validTo).getTime() / 1000,
+        signatureData.signature,
+        JSON.stringify(signatureData),
+        signatureData.algorithm
+      ).lastInsertRowid as number;
+
+      // Update request status based on role
+      const newStatus = role === 'CPSO' ? 'pending_dta' : 'pending_cpso';
+      db.query(`
+        UPDATE aft_requests 
+        SET status = ?,
+            approver_email = ?,
+            approver_id = ?,
+            updated_at = unixepoch(),
+            approval_notes = ?
+        WHERE id = ?
+      `).run(newStatus, signerEmail, signerId, signatureData.notes || null, requestId);
+
+      // Add to request history
+      const historyAction = role === 'CPSO' ? 'CPSO_APPROVED_CAC' : 'ISSM_APPROVED_CAC';
+      const historyNotes = role === 'CPSO' 
+        ? `Request approved by CPSO with CAC signature - Forwarded to DTA. Signature ID: ${signatureId}${signatureData.notes ? '. Notes: ' + signatureData.notes : ''}`
+        : `Request approved by ISSM with CAC signature - Forwarded to CPSO. Signature ID: ${signatureId}${signatureData.notes ? '. Notes: ' + signatureData.notes : ''}`;
+      
+      db.query(`
+        INSERT INTO aft_request_history (request_id, action, notes, user_email)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        requestId,
+        historyAction,
+        historyNotes,
+        signerEmail
+      );
+
+      // Commit transaction
+      db.exec('COMMIT');
+
+      // Audit log
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_APPROVAL',
+        `CAC signature approval applied to request ${requestId} by ${role}`,
+        ipAddress,
+        {
+          requestId,
+          signatureId,
+          role,
+          certificateThumbprint: signatureData.certificate.thumbprint,
+          certificateSubject: signatureData.certificate.subject
+        }
+      );
+
+      console.log(`✅ CAC signature approval applied to request ${requestId} by ${role} user ${signerId}`);
+
+      return { success: true };
+
+    } catch (error) {
+      db.exec('ROLLBACK');
+      console.error('Error applying approver CAC signature:', error);
+      
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_APPROVAL_FAILED',
+        `Failed to apply CAC signature approval to request ${requestId}: ${error}`,
+        ipAddress,
+        { requestId, role, error: String(error) }
+      );
+
+      return { 
+        success: false, 
+        error: `Failed to apply signature: ${error}` 
+      };
+    }
+  }
+  
+  // Apply CAC signature to request (for SME)
   static async applySignature(
     requestId: number,
     signerId: number,
@@ -506,6 +646,134 @@ export class CACSignatureManager {
       notes: signature.notes,
       createdAt: signature.created_at
     };
+  }
+
+  // Apply DTA CAC signature to transfer
+  static async applyDTASignature(
+    requestId: number,
+    signerId: number,
+    signerEmail: string,
+    signatureData: CACSignatureData,
+    ipAddress: string,
+    smeUserId: number
+  ): Promise<{ success: boolean; error?: string }> {
+    const db = getDb();
+    
+    try {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+
+      // Verify request exists and is ready for DTA signature
+      const request = db.query(`
+        SELECT id, status 
+        FROM aft_requests 
+        WHERE id = ? AND dta_id = ?
+      `).get(requestId, signerId) as any;
+
+      if (!request) {
+        db.exec('ROLLBACK');
+        return { 
+          success: false, 
+          error: 'Request not found or access denied' 
+        };
+      }
+
+      // Verify certificate validity
+      const certValid = this.verifyCertificateValidity(signatureData.certificate);
+      if (!certValid.isValid) {
+        db.exec('ROLLBACK');
+        return { 
+          success: false, 
+          error: certValid.error || 'Certificate validation failed' 
+        };
+      }
+
+      // Generate signature hash for integrity
+      const signatureHash = await this.generateSignatureHash(signatureData);
+
+      // Store CAC signature
+      const signatureId = db.query(`
+        INSERT INTO cac_signatures (
+          request_id, user_id, step_type,
+          certificate_thumbprint, certificate_subject, certificate_issuer,
+          certificate_serial, certificate_not_before, certificate_not_after,
+          signature_data, signed_data, signature_algorithm, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+      `).run(
+        requestId, 
+        signerId, 
+        'dta_signature',
+        signatureData.certificate.thumbprint,
+        signatureData.certificate.subject,
+        signatureData.certificate.issuer,
+        signatureData.certificate.serialNumber,
+        new Date(signatureData.certificate.validFrom).getTime() / 1000,
+        new Date(signatureData.certificate.validTo).getTime() / 1000,
+        signatureData.signature,
+        JSON.stringify(signatureData),
+        signatureData.algorithm
+      ).lastInsertRowid as number;
+
+      // Update request status and assign SME
+      db.query(`
+        UPDATE aft_requests 
+        SET status = 'pending_sme_signature',
+            dta_signature_date = unixepoch(),
+            assigned_sme_id = ?,
+            updated_at = unixepoch()
+        WHERE id = ?
+      `).run(smeUserId, requestId);
+
+      // Add to request history
+      db.query(`
+        INSERT INTO aft_request_history (request_id, action, notes, user_email)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        requestId,
+        'DTA_SIGNED_CAC',
+        `DTA CAC signature applied and forwarded to SME. Signature ID: ${signatureId}${signatureData.notes ? '. Notes: ' + signatureData.notes : ''}`,
+        signerEmail
+      );
+
+      // Commit transaction
+      db.exec('COMMIT');
+
+      // Audit log
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_DTA',
+        `DTA CAC signature applied to request ${requestId}`,
+        ipAddress,
+        {
+          requestId,
+          signatureId,
+          smeUserId,
+          certificateThumbprint: signatureData.certificate.thumbprint,
+          certificateSubject: signatureData.certificate.subject
+        }
+      );
+
+      console.log(`✅ DTA CAC signature applied to request ${requestId} by user ${signerId}`);
+
+      return { success: true };
+
+    } catch (error) {
+      db.exec('ROLLBACK');
+      console.error('Error applying DTA CAC signature:', error);
+      
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_DTA_FAILED',
+        `Failed to apply DTA CAC signature to request ${requestId}: ${error}`,
+        ipAddress,
+        { requestId, error: String(error) }
+      );
+
+      return { 
+        success: false, 
+        error: `Failed to apply signature: ${error}` 
+      };
+    }
   }
 }
 

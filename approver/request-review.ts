@@ -2,7 +2,9 @@
 import { ComponentBuilder, Templates } from "../components/ui/server-components";
 import { ApproverNavigation, type ApproverUser } from "./approver-nav";
 import { getDb } from "../lib/database-bun";
-import { FileTextIcon, UserIcon, CalendarIcon, ShieldIcon, ServerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, ClockIcon } from "../components/icons";
+import { FileTextIcon, UserIcon, CalendarIcon, ShieldIcon, ServerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, ClockIcon, EditIcon } from "../components/icons";
+import { CACPinModal } from "../components/cac-pin-modal";
+import { CACSignatureManager } from "../lib/cac-signature";
 
 export class RequestReviewPage {
   static async render(user: ApproverUser, requestId: string): Promise<string> {
@@ -41,6 +43,9 @@ export class RequestReviewPage {
       ORDER BY created_at DESC
     `).all(requestId) as any[];
 
+    // Get existing CAC signatures for this request
+    const cacSignatures = CACSignatureManager.getRequestSignatures(parseInt(requestId));
+
     const content = `
       <div class="space-y-6">
         <!-- Status Banner -->
@@ -54,6 +59,7 @@ export class RequestReviewPage {
             ${this.renderDestinations(request)}
             ${this.renderFileInformation(request)}
             ${this.renderJustification(request)}
+            ${this.renderExistingSignatures(cacSignatures)}
             ${this.renderHistory(history)}
           </div>
           
@@ -65,6 +71,9 @@ export class RequestReviewPage {
           </div>
         </div>
       </div>
+      
+      <!-- CAC PIN Modal -->
+      ${CACPinModal.render()}
     `;
 
     return ApproverNavigation.renderLayout(
@@ -344,12 +353,25 @@ export class RequestReviewPage {
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Approval Actions</h3>
         </div>
         <div class="p-6 pt-4 space-y-4">
+          <div class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
+            <p class="text-sm text-[var(--info)] font-medium mb-2">Digital Signature Options</p>
+            <p class="text-xs text-[var(--muted-foreground)]">
+              You can approve this request with either a CAC digital signature or standard approval.
+            </p>
+          </div>
+          
           <div>
             <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Decision</label>
             <div class="space-y-2">
               ${ComponentBuilder.primaryButton({
-                children: `${CheckCircleIcon({ size: 16 })} Approve Request`,
+                children: `${ShieldIcon({ size: 16 })} Approve with CAC Signature`,
+                onClick: `approveWithCAC(${request.id})`,
+                className: 'w-full justify-center'
+              })}
+              ${ComponentBuilder.button({
+                children: `${CheckCircleIcon({ size: 16 })} Standard Approval`,
                 onClick: `approveRequest(${request.id})`,
+                variant: 'secondary',
                 className: 'w-full justify-center'
               })}
               ${ComponentBuilder.destructiveButton({
@@ -457,6 +479,43 @@ export class RequestReviewPage {
     });
   }
 
+  private static renderExistingSignatures(signatures: any[]): string {
+    if (!signatures || signatures.length === 0) {
+      return '';
+    }
+
+    return ComponentBuilder.card({
+      children: `
+        <div class="p-6 pb-4">
+          <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)] flex items-center gap-2">
+            ${ShieldIcon({ size: 20 })}
+            Digital Signatures
+          </h3>
+        </div>
+        <div class="p-6 pt-0 space-y-3">
+          ${signatures.map(sig => {
+            const display = CACSignatureManager.formatSignatureForDisplay(sig);
+            return `
+              <div class="border border-[var(--border)] rounded-lg p-4 bg-[var(--muted)]">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full ${display.isValid ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}"></div>
+                    <span class="text-sm font-medium text-[var(--foreground)]">${display.signerName}</span>
+                  </div>
+                  <span class="text-xs text-[var(--muted-foreground)]">${sig.step_type || 'signature'}</span>
+                </div>
+                <div class="text-xs text-[var(--muted-foreground)] space-y-1">
+                  <div>Signed: ${display.signedAt}</div>
+                  <div class="font-mono">${display.certificateInfo}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `
+    });
+  }
+
   private static renderNotFound(user: ApproverUser): string {
     const content = `
       <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-12 text-center">
@@ -483,6 +542,8 @@ export class RequestReviewPage {
 
   static getScript(): string {
     return `
+      ${CACPinModal.getScript()}
+      
       function approveRequest(requestId) {
         const notes = document.getElementById('approval-notes').value;
         
@@ -501,6 +562,46 @@ export class RequestReviewPage {
               alert('Error approving request: ' + data.error);
             }
           });
+        }
+      }
+      
+      function approveWithCAC(requestId) {
+        // Store the request ID for CAC signing
+        window.cacApprovalRequestId = requestId;
+        
+        // Show the CAC PIN modal
+        showCACPinModal(requestId);
+      }
+      
+      // Override the submit CAC signature function for approver context
+      async function submitCACSignature(requestId, signatureResult) {
+        try {
+          const notes = document.getElementById('approval-notes')?.value || '';
+          
+          const response = await fetch('/api/approver/approve-cac/' + requestId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signature: signatureResult.signature,
+              certificate: signatureResult.certificate,
+              timestamp: signatureResult.timestamp,
+              algorithm: signatureResult.algorithm,
+              notes: notes
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            closeCACPinModal();
+            alert('Request approved with CAC signature! It has been forwarded to CPSO.');
+            window.location.href = '/approver/pending';
+          } else {
+            showCACError('Server error: ' + result.error);
+          }
+        } catch (error) {
+          console.error('Error submitting CAC signature:', error);
+          showCACError('Failed to submit signature. Please try again.');
         }
       }
       

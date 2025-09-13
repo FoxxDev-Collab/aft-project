@@ -65,6 +65,9 @@ export class RequestReviewPage {
           </div>
         </div>
       </div>
+      
+      <!-- CAC PIN Modal -->
+      ${CACPinModal.render()}
     `;
 
     return CPSONavigation.renderLayout(

@@ -2,6 +2,9 @@
 import { ComponentBuilder } from "../components/ui/server-components";
 import { DTANavigation, type DTAUser } from "./dta-nav";
 import { getDb } from "../lib/database-bun";
+import { CACPinModal } from "../components/cac-pin-modal";
+import { CACSignatureManager } from "../lib/cac-signature";
+import { ShieldIcon } from "../components/icons";
 
 export class DTATransferForm {
   static async render(user: DTAUser, requestId: string, userId: number): Promise<string> {
@@ -34,7 +37,10 @@ export class DTATransferForm {
       ORDER BY u.last_name, u.first_name
     `).all() as any[];
 
-    const content = this.buildTransferForm(request, smeUsers);
+    // Get existing CAC signatures for this request
+    const cacSignatures = CACSignatureManager.getRequestSignatures(parseInt(requestId));
+
+    const content = this.buildTransferForm(request, smeUsers, cacSignatures);
 
     return DTANavigation.renderLayout(
       'Transfer Management',
@@ -45,7 +51,7 @@ export class DTATransferForm {
     );
   }
 
-  private static buildTransferForm(request: any, smeUsers: any[]): string {
+  private static buildTransferForm(request: any, smeUsers: any[], cacSignatures: any[]): string {
     const currentStep = this.getCurrentStep(request);
     const submitText = this.getSubmitButtonText(currentStep, request);
     const submitButton = submitText ? `
@@ -92,6 +98,7 @@ export class DTATransferForm {
           ${this.buildAVScanSection(request, currentStep)}
           ${this.buildTransferSection(request, currentStep)}
           ${this.buildSignatureSection(request, smeUsers, currentStep)}
+          ${this.renderExistingSignatures(cacSignatures)}
           
           <!-- Form Actions -->
           <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
@@ -111,6 +118,9 @@ export class DTATransferForm {
           </div>
         </form>
       </div>
+      
+      <!-- CAC PIN Modal -->
+      ${CACPinModal.render()}
     `;
   }
 
@@ -344,9 +354,26 @@ export class DTATransferForm {
 
           <div>
             <label class="text-sm font-medium text-[var(--foreground)]">DTA Signature Notes</label>
-            <textarea name="dtaSignatureNotes" rows="3" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
+            <textarea name="dtaSignatureNotes" id="dta-signature-notes" rows="3" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
                       placeholder="DTA certification notes, compliance verification, etc." ${!isAccessible ? 'disabled' : ''}></textarea>
           </div>
+          
+          ${isAccessible && !isComplete ? `
+            <div class="space-y-3">
+              <label class="text-sm font-medium text-[var(--foreground)]">Signature Method</label>
+              <div class="flex gap-3">
+                <button type="button" onclick="signWithCAC(${request.id})" 
+                        class="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:bg-[var(--primary)]/90">
+                  ${ShieldIcon({ size: 16 })}
+                  Sign with CAC
+                </button>
+                <button type="button" onclick="signManually(${request.id})" 
+                        class="px-4 py-2 border border-[var(--border)] rounded-md text-[var(--foreground)] hover:bg-[var(--muted)]">
+                  Manual Signature
+                </button>
+              </div>
+            </div>
+          ` : ''}
 
           ${isAccessible && !isComplete ? `
             <div class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
@@ -378,6 +405,46 @@ export class DTATransferForm {
       case 3: return 'Sign & Assign SME';
       default: return '';
     }
+  }
+
+  private static renderExistingSignatures(signatures: any[]): string {
+    if (!signatures || signatures.length === 0) {
+      return '';
+    }
+
+    return `
+      <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6">
+        <div class="flex items-center gap-2 mb-4">
+          ${ShieldIcon({ size: 20 })}
+          <h3 class="text-lg font-semibold text-[var(--foreground)]">Digital Signature Chain</h3>
+        </div>
+        <div class="space-y-3">
+          ${signatures.map(sig => {
+            const display = CACSignatureManager.formatSignatureForDisplay(sig);
+            const roleLabel = sig.step_type === 'requestor_signature' ? 'Requestor' :
+                            sig.step_type === 'approver_approval' ? 'ISSM Approver' :
+                            sig.step_type === 'cpso_approval' ? 'CPSO' :
+                            sig.step_type === 'dta_signature' ? 'DTA' :
+                            sig.step_type || 'Signature';
+            return `
+              <div class="border border-[var(--border)] rounded-lg p-4 bg-[var(--muted)]">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full ${display.isValid ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}"></div>
+                    <span class="text-sm font-medium text-[var(--foreground)]">${display.signerName}</span>
+                  </div>
+                  <span class="text-xs font-medium text-[var(--primary)]">${roleLabel}</span>
+                </div>
+                <div class="text-xs text-[var(--muted-foreground)] space-y-1">
+                  <div>Signed: ${display.signedAt}</div>
+                  <div class="font-mono">${display.certificateInfo}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
   }
 
   private static renderNotFound(user: DTAUser): string {
@@ -505,6 +572,84 @@ export class DTATransferForm {
         .catch(error => {
           console.warn('Auto-save error:', error);
         });
+      }
+      
+      function signWithCAC(requestId) {
+        // Store the request ID for CAC signing
+        window.dtaSignRequestId = requestId;
+        
+        // Show the CAC PIN modal
+        showCACPinModal(requestId);
+      }
+      
+      function signManually(requestId) {
+        const smeSelect = document.querySelector('select[name="smeUserId"]');
+        const notes = document.getElementById('dta-signature-notes')?.value || '';
+        
+        if (!smeSelect || !smeSelect.value) {
+          alert('Please select an SME before signing');
+          return;
+        }
+        
+        if (confirm('Are you sure you want to sign this transfer and assign it to the selected SME?')) {
+          fetch('/api/dta/sign-transfer/' + requestId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              smeUserId: smeSelect.value,
+              notes: notes,
+              signatureMethod: 'manual'
+            })
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert('Transfer signed successfully and forwarded to SME!');
+              window.location.reload();
+            } else {
+              alert('Error signing transfer: ' + data.error);
+            }
+          });
+        }
+      }
+      
+      // Override the submit CAC signature function for DTA context
+      async function submitCACSignature(requestId, signatureResult) {
+        try {
+          const smeSelect = document.querySelector('select[name="smeUserId"]');
+          const notes = document.getElementById('dta-signature-notes')?.value || '';
+          
+          if (!smeSelect || !smeSelect.value) {
+            showCACError('Please select an SME before signing');
+            return;
+          }
+          
+          const response = await fetch('/api/dta/sign-transfer-cac/' + requestId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signature: signatureResult.signature,
+              certificate: signatureResult.certificate,
+              timestamp: signatureResult.timestamp,
+              algorithm: signatureResult.algorithm,
+              smeUserId: smeSelect.value,
+              notes: notes
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            closeCACPinModal();
+            alert('Transfer signed with CAC signature and forwarded to SME!');
+            window.location.reload();
+          } else {
+            showCACError('Server error: ' + result.error);
+          }
+        } catch (error) {
+          console.error('Error submitting CAC signature:', error);
+          showCACError('Failed to submit signature. Please try again.');
+        }
       }
     `;
   }

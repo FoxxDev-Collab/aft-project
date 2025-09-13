@@ -3,6 +3,7 @@ import { UserRole, getDb } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { RequestTrackingService } from "../../lib/request-tracking";
 import { auditLog } from "../../lib/security";
+import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
 
 export async function handleDTAAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   if (!path.startsWith('/api/dta/')) {
@@ -128,6 +129,18 @@ async function handleDTAPost(segments: string[], request: Request, db: any, user
     
     case 'transfer-form':
       return await handleTransferFormSubmission(db, body, userId, userEmail, ipAddress);
+    
+    case 'sign-transfer':
+      if (id) {
+        return await signTransferManual(db, parseInt(id), body, userId, userEmail, ipAddress);
+      }
+      break;
+    
+    case 'sign-transfer-cac':
+      if (id) {
+        return await signTransferWithCAC(db, parseInt(id), body, userId, userEmail, ipAddress);
+      }
+      break;
   }
 
   return new Response(JSON.stringify({ error: 'Action not supported' }), {
@@ -1218,4 +1231,177 @@ async function completeTransfer(db: any, requestId: number, body: any, userId: n
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+// Sign transfer manually (without CAC)
+async function signTransferManual(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
+  const { smeUserId, notes, signatureMethod } = body;
+  
+  try {
+    // Verify request exists and DTA has access
+    const request = db.query(`
+      SELECT id, status, request_number 
+      FROM aft_requests 
+      WHERE id = ? AND dta_id = ?
+    `).get(requestId, userId) as any;
+    
+    if (!request) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Transfer not found or access denied' 
+      }), { 
+        status: 404, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
+    
+    if (!smeUserId) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'SME selection is required' 
+      }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
+    
+    // Update request with DTA signature
+    db.query(`
+      UPDATE aft_requests 
+      SET status = 'pending_sme_signature',
+          dta_signature_date = unixepoch(),
+          assigned_sme_id = ?,
+          updated_at = unixepoch()
+      WHERE id = ?
+    `).run(smeUserId, requestId);
+    
+    // Add to request history
+    db.query(`
+      INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
+      VALUES (?, 'DTA_SIGNED_MANUAL', ?, ?, unixepoch())
+    `).run(requestId, userEmail, `DTA manual signature completed and forwarded to SME. ${notes || ''}`);
+    
+    // Log audit
+    await auditLog(userId, 'DTA_MANUAL_SIGNATURE', `Manual signature applied to transfer ${requestId}`, ipAddress, {
+      requestId,
+      smeUserId,
+      signatureMethod: 'manual'
+    });
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Transfer signed and forwarded to SME successfully' 
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Error signing transfer manually:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: 'Failed to sign transfer' 
+    }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  }
+}
+
+// Sign transfer with CAC certificate
+async function signTransferWithCAC(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
+  const { signature, certificate, timestamp, algorithm, smeUserId, notes } = body;
+  
+  try {
+    // Verify request exists and DTA has access
+    const request = db.query(`
+      SELECT id, status, request_number 
+      FROM aft_requests 
+      WHERE id = ? AND dta_id = ?
+    `).get(requestId, userId) as any;
+    
+    if (!request) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Transfer not found or access denied' 
+      }), { 
+        status: 404, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
+    
+    if (!smeUserId) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'SME selection is required' 
+      }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
+    
+    // Validate signature data
+    if (!signature || !certificate || !timestamp || !algorithm) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Invalid signature data' 
+      }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
+    
+    // Construct CAC signature data
+    const signatureData: CACSignatureData = {
+      signature,
+      certificate,
+      timestamp,
+      algorithm,
+      notes
+    };
+    
+    // Apply CAC signature
+    const signatureResult = await CACSignatureManager.applyDTASignature(
+      requestId,
+      userId,
+      userEmail,
+      signatureData,
+      ipAddress,
+      smeUserId
+    );
+    
+    if (!signatureResult.success) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: signatureResult.error || 'Failed to apply CAC signature' 
+      }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json' } 
+      });
+    }
+    
+    // Log audit
+    await auditLog(userId, 'DTA_CAC_SIGNATURE', `CAC signature applied to transfer ${requestId}`, ipAddress, {
+      requestId,
+      smeUserId,
+      certificateThumbprint: certificate.thumbprint,
+      certificateSubject: certificate.subject
+    });
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Transfer signed with CAC signature and forwarded to SME' 
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Error signing transfer with CAC:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: 'Failed to apply CAC signature' 
+    }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  }
 }

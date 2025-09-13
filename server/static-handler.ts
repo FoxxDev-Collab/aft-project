@@ -21,5 +21,19 @@ export async function handleStaticFiles(path: string): Promise<Response | null> 
     return new Response("File not found", { status: 404 });
   }
   
+  // Serve public lib files (for CAC Web Crypto)
+  if (path.startsWith('/lib/')) {
+    const file = Bun.file('./public' + path);
+    if (await file.exists()) {
+      const contentType = path.endsWith('.js') ? 'application/javascript' : 
+                         path.endsWith('.css') ? 'text/css' : 
+                         'text/plain';
+      return applySecurityHeaders(new Response(file, {
+        headers: { 'Content-Type': contentType }
+      }));
+    }
+    return new Response("File not found", { status: 404 });
+  }
+  
   return null;
 }

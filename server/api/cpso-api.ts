@@ -3,6 +3,7 @@ import { getDb } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { UserRole } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
+import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
 
 export async function handleCPSOAPI(request: Request, path: string, ipAddress: string): Promise<Response> {
   // Check authentication and CPSO role
@@ -52,7 +53,80 @@ export async function handleCPSOAPI(request: Request, path: string, ipAddress: s
     if (method === 'POST') {
       const body: any = await request.json();
       
-      // Final approve request (CPSO approval)
+      // Approve request with CAC signature
+      if (apiPath.startsWith('approve-cac/')) {
+        const requestId = apiPath.split('/')[1];
+        
+        if (!requestId) {
+          return new Response(JSON.stringify({ error: 'Request ID is required' }), { 
+            status: 400, 
+            headers: { 'Content-Type': 'application/json' } 
+          });
+        }
+        
+        const { signature, certificate, timestamp, algorithm, notes } = body as {
+          signature: string;
+          certificate: any;
+          timestamp: string;
+          algorithm: string;
+          notes?: string;
+        };
+        
+        // Validate signature data
+        if (!signature || !certificate || !timestamp || !algorithm) {
+          return new Response(JSON.stringify({ error: 'Invalid signature data' }), { 
+            status: 400, 
+            headers: { 'Content-Type': 'application/json' } 
+          });
+        }
+        
+        // Construct CAC signature data
+        const signatureData: CACSignatureData = {
+          signature,
+          certificate,
+          timestamp,
+          algorithm,
+          notes
+        };
+        
+        // Apply CAC signature and approve request (CPSO approval to DTA)
+        const signatureResult = await CACSignatureManager.applyApproverSignature(
+          parseInt(requestId),
+          session.userId,
+          session.email,
+          signatureData,
+          ipAddress,
+          'CPSO' // CPSO role for final approval
+        );
+        
+        if (!signatureResult.success) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: signatureResult.error || 'Failed to apply CAC signature' 
+          }), { 
+            status: 400, 
+            headers: { 'Content-Type': 'application/json' } 
+          });
+        }
+        
+        // Log the action
+        await auditLog(
+          session.userId,
+          'REQUEST_APPROVED_CAC',
+          `CPSO approved request #${requestId} with CAC signature`,
+          ipAddress,
+          'info'
+        );
+        
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: 'Request approved with CAC signature and forwarded to DTA' 
+        }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Standard approve request (without CAC)
       if (apiPath.startsWith('approve/')) {
         const requestId = apiPath.split('/')[1];
 

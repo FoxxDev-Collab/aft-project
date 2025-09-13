@@ -3,14 +3,15 @@ import { getDb } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { UserRole } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
+import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
 
 export async function handleApproverAPI(request: Request, path: string, ipAddress: string): Promise<Response> {
-  // Allow APPROVER and CPSO to access
+  // Check authentication and APPROVER role (ISSM only)
   const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress);
   if (authResult.response) return authResult.response;
   const activeRole = authResult.session.activeRole || authResult.session.primaryRole;
-  if (activeRole !== UserRole.APPROVER && activeRole !== UserRole.CPSO) {
-    return RoleMiddleware.accessDenied(`This API requires APPROVER or CPSO role. Your current role is ${activeRole?.toUpperCase()}.`);
+  if (activeRole !== UserRole.APPROVER) {
+    return RoleMiddleware.accessDenied(`This API requires APPROVER (ISSM) role. Your current role is ${activeRole?.toUpperCase()}.`);
   }
 
   const db = getDb();
@@ -53,7 +54,80 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
     if (method === 'POST') {
       const body: any = await request.json();
       
-      // Approve request
+      // Approve request with CAC signature
+      if (apiPath.startsWith('approve-cac/')) {
+        const requestId = apiPath.split('/')[1];
+        
+        if (!requestId) {
+          return new Response(JSON.stringify({ error: 'Request ID is required' }), { 
+            status: 400, 
+            headers: { 'Content-Type': 'application/json' } 
+          });
+        }
+        
+        const { signature, certificate, timestamp, algorithm, notes } = body as {
+          signature: string;
+          certificate: any;
+          timestamp: string;
+          algorithm: string;
+          notes?: string;
+        };
+        
+        // Validate signature data
+        if (!signature || !certificate || !timestamp || !algorithm) {
+          return new Response(JSON.stringify({ error: 'Invalid signature data' }), { 
+            status: 400, 
+            headers: { 'Content-Type': 'application/json' } 
+          });
+        }
+        
+        // Construct CAC signature data
+        const signatureData: CACSignatureData = {
+          signature,
+          certificate,
+          timestamp,
+          algorithm,
+          notes
+        };
+        
+        // Apply CAC signature and approve request (ISSM approval)
+        const signatureResult = await CACSignatureManager.applyApproverSignature(
+          parseInt(requestId),
+          session.userId,
+          session.email,
+          signatureData,
+          ipAddress,
+          'ISSM' // Always ISSM for approver role
+        );
+        
+        if (!signatureResult.success) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: signatureResult.error || 'Failed to apply CAC signature' 
+          }), { 
+            status: 400, 
+            headers: { 'Content-Type': 'application/json' } 
+          });
+        }
+        
+        // Log the action
+        await auditLog(
+          session.userId,
+          'REQUEST_APPROVED_CAC',
+          `Approved request #${requestId} with CAC signature`,
+          ipAddress,
+          'info'
+        );
+        
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: 'Request approved with CAC signature' 
+        }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Standard approve request (without CAC)
       if (apiPath.startsWith('approve/')) {
         const requestId = apiPath.split('/')[1];
 
@@ -62,13 +136,11 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         }
         const { notes }: { notes?: string } = body;
         
-        // Update request status - approver sends to CPSO, CPSO sends to DTA
-        const newStatus = activeRole === UserRole.CPSO ? 'pending_dta' : 'pending_cpso';
+        // Update request status - ISSM approver sends to CPSO
+        const newStatus = 'pending_cpso';
         
-        // Only allow approval if request is in the correct pending state for this role
-        const allowedStatuses = activeRole === UserRole.CPSO 
-          ? ['pending_cpso']  // CPSO can only approve requests pending CPSO review
-          : ['pending_approver', 'submitted', 'pending_approval'];  // APPROVER can approve initial submissions
+        // Only allow approval if request is in the correct pending state for ISSM
+        const allowedStatuses = ['pending_approver', 'submitted', 'pending_approval'];
         
         const result = db.prepare(`
           UPDATE aft_requests 
@@ -114,11 +186,9 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           });
         }
         
-        // Add to history
-        const historyAction = activeRole === UserRole.CPSO ? 'CPSO_APPROVED' : 'ISSM_APPROVED';
-        const historyNotes = activeRole === UserRole.CPSO ? 
-          (notes || 'Request approved by CPSO - Forwarded to DTA') : 
-          (notes || 'Request approved by ISSM - Forwarded to CPSO');
+        // Add to history (ISSM approval)
+        const historyAction = 'ISSM_APPROVED';
+        const historyNotes = notes || 'Request approved by ISSM - Forwarded to CPSO';
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
           VALUES (?, ?, ?, ?, unixepoch())
@@ -155,10 +225,8 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
         }
         
         // Update request status to 'rejected' - rejected requests cannot be edited
-        // Only allow rejection if request is in the correct pending state for this role
-        const allowedStatuses = activeRole === UserRole.CPSO 
-          ? ['pending_cpso']  // CPSO can only reject requests pending CPSO review
-          : ['pending_approver', 'submitted', 'pending_approval'];  // APPROVER can reject initial submissions
+        // Only allow rejection if request is in the correct pending state for ISSM
+        const allowedStatuses = ['pending_approver', 'submitted', 'pending_approval'];
         
         const result = db.prepare(`
           UPDATE aft_requests 
@@ -179,9 +247,7 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           if (currentRequest) {
             switch(currentRequest.status) {
               case 'pending_cpso':
-                if (activeRole !== UserRole.CPSO) {
-                  errorMessage = 'This request has already been approved and is pending CPSO review. Only CPSO can reject it now.';
-                }
+                errorMessage = 'This request has already been approved and is pending CPSO review.';
                 break;
               case 'pending_dta':
                 errorMessage = 'This request has already been approved by CPSO and cannot be rejected at this stage.';
