@@ -1226,7 +1226,7 @@ async function completeTransfer(db: any, requestId: number, body: any, userId: n
 
 // Sign transfer manually (without CAC)
 async function signTransferManual(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
-  const { smeUserId, notes, signatureMethod } = body;
+  const { smeUserId, notes, signatureMethod, filesTransferred, transferDateTime, transferNotes } = body;
   
   try {
     // Verify request exists and DTA has access
@@ -1247,15 +1247,50 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
     }
     
     if (!smeUserId) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'SME selection is required' 
-      }), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json' } 
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'SME selection is required'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
-    
+
+    // Validate transfer completion data
+    if (!filesTransferred || filesTransferred < 1) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Number of files transferred is required'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Update transfer completion data first
+    const transferTimestamp = transferDateTime ? new Date(transferDateTime).getTime() / 1000 : Math.floor(Date.now() / 1000);
+
+    db.query(`
+      UPDATE aft_requests
+      SET transfer_completed_date = ?,
+          files_transferred_count = ?,
+          updated_at = unixepoch()
+      WHERE id = ?
+    `).run(transferTimestamp, parseInt(filesTransferred), requestId);
+
+    // Add transfer completion to audit trail
+    if (transferNotes) {
+      RequestTrackingService.addAuditEntry(
+        requestId,
+        userId,
+        'transfer_completed',
+        'active_transfer',
+        'active_transfer',
+        JSON.stringify({ filesTransferred, transferNotes }),
+        `Transfer completed: ${filesTransferred} files transferred. ${transferNotes}`
+      );
+    }
+
     // Update request with DTA signature and forward to SME immediately
     db.query(`
       UPDATE aft_requests
@@ -1270,7 +1305,7 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
     db.query(`
       INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
       VALUES (?, 'DTA_SIGNED_MANUAL', ?, ?, unixepoch())
-    `).run(requestId, userEmail, `DTA manual signature completed and forwarded to SME. ${notes || ''}`);
+    `).run(requestId, userEmail, `Transfer completed (${filesTransferred} files) and DTA manual signature applied. Forwarded to SME. ${notes || ''}`);
 
     // Log audit
     await auditLog(userId, 'DTA_MANUAL_SIGNATURE', `Manual signature applied to transfer ${requestId}`, ipAddress, {
@@ -1281,7 +1316,7 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Transfer signed and forwarded to SME successfully'
+      message: `Transfer completed (${filesTransferred} files) and signed successfully. Forwarded to SME for verification.`
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1300,7 +1335,7 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
 
 // Sign transfer with CAC certificate
 async function signTransferWithCAC(db: any, requestId: number, body: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
-  const { signature, certificate, timestamp, algorithm, smeUserId, notes } = body;
+  const { signature, certificate, timestamp, algorithm, smeUserId, notes, filesTransferred, transferDateTime, transferNotes } = body;
   
   try {
     // Verify request exists and DTA has access
@@ -1319,17 +1354,28 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
         headers: { 'Content-Type': 'application/json' } 
       });
     }
-    
+
     if (!smeUserId) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'SME selection is required' 
-      }), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json' } 
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'SME selection is required'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
-    
+
+    // Validate transfer completion data
+    if (!filesTransferred || filesTransferred < 1) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Number of files transferred is required'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     // Validate signature data
     if (!signature || !certificate || !timestamp || !algorithm) {
       return new Response(JSON.stringify({ 
@@ -1341,13 +1387,37 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
       });
     }
     
+    // Update transfer completion data first
+    const transferTimestamp = transferDateTime ? new Date(transferDateTime).getTime() / 1000 : Math.floor(Date.now() / 1000);
+
+    db.query(`
+      UPDATE aft_requests
+      SET transfer_completed_date = ?,
+          files_transferred_count = ?,
+          updated_at = unixepoch()
+      WHERE id = ?
+    `).run(transferTimestamp, parseInt(filesTransferred), requestId);
+
+    // Add transfer completion to audit trail
+    if (transferNotes) {
+      RequestTrackingService.addAuditEntry(
+        requestId,
+        userId,
+        'transfer_completed',
+        'active_transfer',
+        'active_transfer',
+        JSON.stringify({ filesTransferred, transferNotes }),
+        `Transfer completed: ${filesTransferred} files transferred. ${transferNotes}`
+      );
+    }
+
     // Construct CAC signature data
     const signatureData: CACSignatureData = {
       signature,
       certificate,
       timestamp,
       algorithm,
-      notes
+      notes: `Transfer completed (${filesTransferred} files). ${notes || ''}`
     };
     
     // Apply CAC signature and forward to SME immediately
@@ -1380,7 +1450,7 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Transfer signed with CAC signature and forwarded to SME successfully'
+      message: `Transfer completed (${filesTransferred} files) and signed with CAC signature successfully. Forwarded to SME for verification.`
     }), {
       headers: { 'Content-Type': 'application/json' }
     });

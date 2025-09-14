@@ -96,7 +96,6 @@ export class DTATransferForm {
           <input type="hidden" name="requestId" value="${request.id}">
           
           ${this.buildAVScanSection(request, currentStep)}
-          ${this.buildTransferSection(request, currentStep)}
           ${this.buildSignatureSection(request, smeUsers, currentStep)}
           ${this.renderExistingSignatures(cacSignatures)}
           
@@ -126,25 +125,23 @@ export class DTATransferForm {
 
   private static getCurrentStep(request: any): number {
     if (!request.origination_scan_status || !request.destination_scan_status) return 1;
-    if (!request.transfer_completed_date) return 2;
-    if (!request.dta_signature_date) return 3;
-    return 4; // Complete
+    if (!request.dta_signature_date) return 2;
+    return 3; // Complete
   }
 
   private static isStepAccessible(stepNumber: number, request: any): boolean {
     const currentStep = this.getCurrentStep(request);
-    // Unlock signature step as soon as both AV scans are recorded (no need to click Complete Transfer)
+    // Unlock signature step as soon as both AV scans are recorded
     const scansRecorded = !!request.origination_scan_status && !!request.destination_scan_status;
-    if (stepNumber === 3 && scansRecorded) return true;
+    if (stepNumber === 2 && scansRecorded) return true;
     return stepNumber <= currentStep;
   }
 
   private static buildProgressSteps(currentStep: number): string {
     const steps = [
       { id: 1, title: 'AV Scan Verification', description: 'Record origination and destination scan results' },
-      { id: 2, title: 'File Transfer', description: 'Perform the actual file transfer' },
-      { id: 3, title: 'DTA Signature', description: 'Sign transfer and assign SME' },
-      { id: 4, title: 'Complete', description: 'Transfer ready for SME verification' }
+      { id: 2, title: 'Sign & Complete Transfer', description: 'Sign transfer, complete files, and forward to SME' },
+      { id: 3, title: 'Complete', description: 'Transfer forwarded to SME for verification' }
     ];
 
     const stepsHtml = steps.map(step => {
@@ -247,68 +244,11 @@ export class DTATransferForm {
     `;
   }
 
-  private static buildTransferSection(request: any, currentStep: number): string {
-    const isActive = currentStep === 2;
-    const isComplete = currentStep > 2;
-    const canTransfer = !!request.origination_scan_status && !!request.destination_scan_status;
-    
-    return `
-      <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-6 ${!isActive && !isComplete ? 'opacity-50' : ''}">
-        <div class="flex items-center gap-2 mb-4">
-          <div class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
-            isComplete ? 'bg-[var(--success)] text-white' : 
-            isActive ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 
-            'bg-[var(--muted)] text-[var(--muted-foreground)]'
-          }">
-            ${isComplete ? '✓' : '2'}
-          </div>
-          <h3 class="text-lg font-semibold text-[var(--foreground)]">File Transfer Execution</h3>
-        </div>
-
-        ${!canTransfer && !isComplete ? `
-          <div class="bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-lg p-4 mb-4">
-            <div class="text-sm text-[var(--warning)]">
-              ⚠️ Transfer cannot proceed until both origination and destination AV scans are recorded.
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="text-sm font-medium text-[var(--foreground)]">Files Transferred</label>
-              <input type="number" name="filesTransferred" placeholder="Number of files transferred" 
-                     class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
-                     ${!isActive ? 'disabled' : ''} min="0" required>
-            </div>
-            <div>
-              <label class="text-sm font-medium text-[var(--foreground)]">Transfer Date/Time</label>
-              <input type="datetime-local" name="transferDateTime" 
-                     class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
-                     ${!isActive ? 'disabled' : ''} value="${request.transfer_completed_date ? new Date(request.transfer_completed_date * 1000).toISOString().slice(0, 16) : ''}">
-            </div>
-          </div>
-
-          <div>
-            <label class="text-sm font-medium text-[var(--foreground)]">Transfer Notes</label>
-            <textarea name="transferNotes" rows="3" class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
-                      placeholder="Details about the transfer process, any issues encountered, etc." ${!isActive ? 'disabled' : ''}></textarea>
-          </div>
-
-          ${isComplete ? `
-            <div class="text-xs p-2 rounded bg-[var(--success)]/10 text-[var(--success)]">
-              ✓ Transfer completed on ${new Date(request.transfer_completed_date * 1000).toLocaleString()}
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-  }
 
   private static buildSignatureSection(request: any, smeUsers: any[], currentStep: number): string {
-    const isActive = currentStep === 3;
-    const isComplete = currentStep > 3;
-    const isAccessible = this.isStepAccessible(3, request);
+    const isActive = currentStep === 2;
+    const isComplete = currentStep > 2;
+    const isAccessible = this.isStepAccessible(2, request);
     const scansRecorded = !!request.origination_scan_status && !!request.destination_scan_status;
     
     return `
@@ -319,9 +259,9 @@ export class DTATransferForm {
             isAccessible ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 
             'bg-[var(--muted)] text-[var(--muted-foreground)]'
           }">
-            ${isComplete ? '✓' : '3'}
+            ${isComplete ? '✓' : '2'}
           </div>
-          <h3 class="text-lg font-semibold text-[var(--foreground)]">DTA Signature & SME Assignment</h3>
+          <h3 class="text-lg font-semibold text-[var(--foreground)]">Sign Transfer & Complete (Forward to SME)</h3>
           ${scansRecorded && !isComplete ? `
             <div class="ml-auto">
               <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[var(--info)]/10 text-[var(--info)]">
@@ -332,6 +272,32 @@ export class DTATransferForm {
         </div>
 
         <div class="space-y-4">
+          <!-- Transfer Information -->
+          <div class="bg-[var(--muted)]/20 rounded-lg p-4 border border-[var(--border)]">
+            <h4 class="text-sm font-semibold text-[var(--foreground)] mb-3">File Transfer Completion</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="text-sm font-medium text-[var(--foreground)]">Files Transferred</label>
+                <input type="number" name="filesTransferred"
+                       class="w-full p-2 border border-[var(--border)] rounded-md mt-1"
+                       ${!isAccessible ? 'disabled' : ''}
+                       placeholder="Number of files transferred" min="1" required>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-[var(--foreground)]">Transfer Date/Time</label>
+                <input type="datetime-local" name="transferDateTime"
+                       class="w-full p-2 border border-[var(--border)] rounded-md mt-1"
+                       ${!isAccessible ? 'disabled' : ''}>
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="text-sm font-medium text-[var(--foreground)]">Transfer Notes</label>
+              <textarea name="transferNotes" rows="2" class="w-full p-2 border border-[var(--border)] rounded-md mt-1"
+                        placeholder="Transfer completion notes, any issues encountered, etc." ${!isAccessible ? 'disabled' : ''}></textarea>
+            </div>
+          </div>
+
+          <!-- SME Assignment -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="text-sm font-medium text-[var(--foreground)]">Assign SME for Two-Person Integrity</label>
@@ -346,8 +312,8 @@ export class DTATransferForm {
             </div>
             <div>
               <label class="text-sm font-medium text-[var(--foreground)]">DTA Signature Date/Time</label>
-              <input type="datetime-local" name="dtaSignatureDateTime" 
-                     class="w-full p-2 border border-[var(--border)] rounded-md mt-1" 
+              <input type="datetime-local" name="dtaSignatureDateTime"
+                     class="w-full p-2 border border-[var(--border)] rounded-md mt-1"
                      ${!isAccessible ? 'disabled' : ''} value="${request.dta_signature_date ? new Date(request.dta_signature_date * 1000).toISOString().slice(0, 16) : ''}">
             </div>
           </div>
@@ -387,14 +353,14 @@ export class DTATransferForm {
           ${isAccessible && !isComplete ? `
             <div class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
               <div class="text-sm text-[var(--info)]">
-                ℹ️ By signing this transfer, you certify that all Section 4 procedures have been completed according to AFT requirements.
+                ℹ️ By signing this transfer, you certify that all Section 4 procedures and file transfers have been completed according to AFT requirements. The transfer will be immediately forwarded to the assigned SME for Two-Person Integrity verification.
               </div>
             </div>
           ` : ''}
 
           ${isComplete ? `
             <div class="text-xs p-2 rounded bg-[var(--success)]/10 text-[var(--success)]">
-              ✓ DTA signature completed on ${new Date(request.dta_signature_date * 1000).toLocaleString()}
+              ✓ Transfer completed and signed on ${new Date(request.dta_signature_date * 1000).toLocaleString()}. Forwarded to SME for verification.
             </div>
           ` : ''}
         </div>
@@ -403,15 +369,9 @@ export class DTATransferForm {
   }
 
   private static getSubmitButtonText(currentStep: number, request: any): string {
-    // If transfer is completed but not signed, allow signature
-    if (request.transfer_completed_date && !request.dta_signature_date) {
-      return 'Sign & Assign SME';
-    }
-    
     switch (currentStep) {
       case 1: return 'Record AV Scan Results';
-      case 2: return 'Complete Transfer';
-      case 3: return 'Sign & Assign SME';
+      case 2: return 'Sign, Complete & Forward to SME';
       default: return '';
     }
   }

@@ -547,12 +547,20 @@ export class SMERequestSignPage {
         const statusElement = document.getElementById('cac-signature-status');
         const cacBtn = document.getElementById('sign-cac-btn');
 
+        console.log('Checking CAC certificate...');
+        console.log('Status element found:', !!statusElement);
+        console.log('CAC button found:', !!cacBtn);
+
         if (!statusElement) return; // Not on signature section
 
         // Check for client certificate
         fetch('/api/sme/cac-info')
-          .then(response => response.json())
+          .then(response => {
+            console.log('CAC info fetch response status:', response.status);
+            return response.json();
+          })
           .then(data => {
+            console.log('CAC info response data:', data);
             if (data.hasClientCert && data.certificate) {
               cacCertificateInfo = data.certificate;
 
@@ -573,7 +581,29 @@ export class SMERequestSignPage {
               // Enable CAC button
               if (cacBtn) {
                 cacBtn.disabled = false;
-                cacBtn.className = cacBtn.className.replace('opacity-50', '');
+                cacBtn.style.opacity = '1 !important';
+                cacBtn.style.cursor = 'pointer !important';
+                cacBtn.style.pointerEvents = 'auto !important';
+                cacBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+                cacBtn.classList.add('bg-[var(--primary)]', 'hover:bg-[var(--primary)]/90');
+                cacBtn.removeAttribute('disabled');
+                cacBtn.setAttribute('data-cac-available', 'true');
+                console.log('CAC button enabled successfully');
+              } else {
+                console.error('CAC button not found by ID - trying alternative selection');
+                // Try to find button by text content or class
+                const allButtons = document.querySelectorAll('button');
+                for (let btn of allButtons) {
+                  if (btn.textContent?.includes('Sign with CAC')) {
+                    console.log('Found CAC button by text content');
+                    btn.disabled = false;
+                    btn.style.opacity = '1 !important';
+                    btn.style.cursor = 'pointer !important';
+                    btn.style.pointerEvents = 'auto !important';
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    break;
+                  }
+                }
               }
 
               console.log('CAC certificate available for SME:', {
