@@ -25,7 +25,7 @@ export async function handleDTAAPI(request: Request, path: string, ipAddress: st
   try {
     switch (request.method) {
       case 'GET':
-        return await handleDTAGet(segments, db, userId, userEmail, ipAddress);
+        return await handleDTAGet(segments, db, userId, userEmail, ipAddress, authResult.session);
       case 'POST':
         return await handleDTAPost(segments, request, db, userId, userEmail, ipAddress);
       case 'PUT':
@@ -45,10 +45,13 @@ export async function handleDTAAPI(request: Request, path: string, ipAddress: st
   }
 }
 
-async function handleDTAGet(segments: string[], db: any, userId: number, userEmail: string, ipAddress: string): Promise<Response> {
+async function handleDTAGet(segments: string[], db: any, userId: number, userEmail: string, ipAddress: string, session?: any): Promise<Response> {
   const [resource, id, action] = segments;
 
   switch (resource) {
+    case 'cac-info':
+      return getCACInfo(session);
+
     case 'dashboard':
       return getDashboardData(db);
     
@@ -1396,12 +1399,54 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
     
   } catch (error) {
     console.error('Error signing transfer with CAC:', error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: 'Failed to apply CAC signature' 
-    }), { 
-      status: 500, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({
+      success: false,
+      error: 'Failed to apply CAC signature'
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Get client certificate information for CAC authentication
+function getCACInfo(session?: any): Response {
+  try {
+    // First check if we have CAC info stored in the session
+    let hasCACCert = false;
+    let certInfo = null;
+
+    if (session?.cacCertificate) {
+      // Use CAC from session
+      hasCACCert = true;
+      certInfo = session.cacCertificate;
+      console.log('Using CAC Certificate from session for DTA:', {
+        subject: certInfo.subject,
+        issuer: certInfo.issuer,
+        serial: certInfo.serialNumber
+      });
+    } else {
+      // No client certificate provided
+      hasCACCert = false;
+      certInfo = null;
+      console.log('No CAC certificate found in session for DTA');
+    }
+
+    return new Response(JSON.stringify({
+      hasClientCert: hasCACCert,
+      certificate: certInfo
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('Error getting CAC info for DTA:', error);
+    return new Response(JSON.stringify({
+      hasClientCert: false,
+      certificate: null,
+      error: 'Failed to retrieve CAC information'
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 }

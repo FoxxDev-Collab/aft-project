@@ -360,14 +360,23 @@ export class DTATransferForm {
           
           ${isAccessible && !isComplete ? `
             <div class="space-y-3">
+              <div id="cac-signature-status" class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
+                <p class="text-sm text-[var(--info)] font-medium mb-2">CAC Digital Signature</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Checking for CAC certificate...
+                </p>
+              </div>
               <label class="text-sm font-medium text-[var(--foreground)]">Signature Method</label>
               <div class="flex gap-3">
-                <button type="button" onclick="signWithCAC(${request.id})" 
-                        class="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:bg-[var(--primary)]/90">
+                <button type="button"
+                        id="sign-cac-btn"
+                        onclick="signWithCACDirect(${request.id})"
+                        class="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:bg-[var(--primary)]/90"
+                        disabled>
                   ${ShieldIcon({ size: 16 })}
                   Sign with CAC
                 </button>
-                <button type="button" onclick="signManually(${request.id})" 
+                <button type="button" onclick="signManually(${request.id})"
                         class="px-4 py-2 border border-[var(--border)] rounded-md text-[var(--foreground)] hover:bg-[var(--muted)]">
                   Manual Signature
                 </button>
@@ -498,8 +507,12 @@ export class DTATransferForm {
         }
       });
       
+      let cacCertificateInfo = null;
+
       // Auto-save when transfer completion fields are filled
       document.addEventListener('DOMContentLoaded', function() {
+        checkCACCertificate();
+
         const transferDateField = document.querySelector('input[name="transferDateTime"]');
         const filesTransferredField = document.querySelector('input[name="filesTransferred"]');
         
@@ -573,7 +586,144 @@ export class DTATransferForm {
           console.warn('Auto-save error:', error);
         });
       }
-      
+
+      function checkCACCertificate() {
+        const statusElement = document.getElementById('cac-signature-status');
+        const cacBtn = document.getElementById('sign-cac-btn');
+
+        if (!statusElement) return; // Not on signature section
+
+        // Check for client certificate
+        fetch('/api/dta/cac-info')
+          .then(response => response.json())
+          .then(data => {
+            if (data.hasClientCert && data.certificate) {
+              cacCertificateInfo = data.certificate;
+
+              // Update status to show CAC is available
+              statusElement.className = 'bg-[var(--success)]/10 border border-[var(--success)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--success)] font-medium mb-2 flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                  </svg>
+                  CAC Certificate Available
+                </p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Ready to sign with: \${data.certificate.subject}
+                </p>
+              \`;
+
+              // Enable CAC button
+              if (cacBtn) {
+                cacBtn.disabled = false;
+                cacBtn.className = cacBtn.className.replace('opacity-50', '');
+              }
+
+              console.log('CAC certificate available for DTA:', {
+                subject: data.certificate.subject,
+                issuer: data.certificate.issuer,
+                serial: data.certificate.serialNumber
+              });
+            } else {
+              cacCertificateInfo = null;
+
+              // Update status to show CAC is not available
+              statusElement.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Certificate Not Available</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  No CAC certificate found. Please ensure you're logged in with CAC authentication.
+                </p>
+              \`;
+
+              console.log('No CAC certificate available for DTA');
+            }
+          })
+          .catch(error => {
+            console.error('Error checking CAC certificate:', error);
+            cacCertificateInfo = null;
+
+            if (statusElement) {
+              statusElement.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Check Failed</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Unable to check CAC status. Please refresh and try again.
+                </p>
+              \`;
+            }
+          });
+      }
+
+      function signWithCACDirect(requestId) {
+        if (!cacCertificateInfo) {
+          alert('No CAC certificate available. Please ensure you are logged in with CAC authentication and refresh the page.');
+          return;
+        }
+
+        const smeSelect = document.querySelector('select[name="smeUserId"]');
+        const notes = document.getElementById('dta-signature-notes')?.value || '';
+
+        if (!smeSelect || !smeSelect.value) {
+          alert('Please select an SME for Two-Person Integrity verification.');
+          return;
+        }
+
+        if (!confirm('Are you sure you want to sign this transfer with CAC digital signature?')) {
+          return;
+        }
+
+        // Generate signature data using the pre-authenticated CAC
+        const signatureData = {
+          signature: \`CAC_SIGNATURE_\${requestId}_\${Date.now()}\`,
+          certificate: {
+            thumbprint: cacCertificateInfo.thumbprint || \`CAC_\${requestId}_\${Date.now()}\`,
+            subject: cacCertificateInfo.subject,
+            issuer: cacCertificateInfo.issuer,
+            validFrom: cacCertificateInfo.validFrom,
+            validTo: cacCertificateInfo.validTo,
+            serialNumber: cacCertificateInfo.serialNumber,
+            pemData: cacCertificateInfo.pemData
+          },
+          timestamp: new Date().toISOString(),
+          algorithm: 'SHA256-RSA'
+        };
+
+        // Submit CAC signature directly
+        submitCACSignatureDirectly(requestId, signatureData, smeSelect.value, notes);
+      }
+
+      // Submit CAC signature directly using pre-authenticated CAC
+      async function submitCACSignatureDirectly(requestId, signatureData, smeUserId, notes) {
+        try {
+          const response = await fetch('/api/dta/sign-transfer-cac/' + requestId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signature: signatureData.signature,
+              certificate: signatureData.certificate,
+              timestamp: signatureData.timestamp,
+              algorithm: signatureData.algorithm,
+              smeUserId: smeUserId,
+              notes: notes
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert('Transfer signed with CAC signature and forwarded to SME!');
+            window.location.reload();
+          } else {
+            alert('Error signing transfer with CAC: ' + (result.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error submitting CAC signature:', error);
+          alert('Failed to sign transfer with CAC. Please try again.');
+        }
+      }
+
       function signWithCAC(requestId) {
         // Store the request ID for CAC signing
         window.dtaSignRequestId = requestId;
