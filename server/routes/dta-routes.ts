@@ -5,7 +5,6 @@ import { DTADashboard } from "../../dta/dashboard";
 import { DtaRequests } from "../../dta/requests";
 import { DTAActiveTransfers } from "../../dta/active";
 import { DTADataManagement } from "../../dta/data";
-import { DTAAllRequests } from "../../dta/all-requests";
 import { DTAReports } from "../../dta/reports";
 import { DTARequestReviewPage } from "../../dta/request-review";
 import { DTATransferForm } from "../../dta/transfer-form";
@@ -66,15 +65,6 @@ export async function handleDTARoutes(request: Request, path: string, ipAddress:
         headers: { "Content-Type": "text/html" }
       });
 
-    case '/dta/all-requests':
-      const allRequestsHtml = await DTAAllRequests.render(user, viewMode);
-      return new Response(createHtmlPage(
-        "AFT - All Requests",
-        allRequestsHtml,
-        DTAAllRequests.getScript()
-      ), {
-        headers: { "Content-Type": "text/html" }
-      });
 
     case '/dta/reports':
       const reportsHtml = await DTAReports.renderReportsPage(user);

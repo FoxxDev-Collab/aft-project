@@ -1213,21 +1213,12 @@ async function completeTransfer(db: any, requestId: number, body: any, userId: n
     tpiMaintained
   });
 
-  // Check if both transfer completion and DTA signature are done, then forward to SME
-  await checkAndForwardToSME(db, requestId, userId, userEmail);
-
-  // Get updated request status to check if it was forwarded to SME
-  const updatedRequest = db.query("SELECT status FROM aft_requests WHERE id = ?").get(requestId) as any;
-  const wasForwardedToSME = updatedRequest?.status === 'pending_sme_signature';
-
   return new Response(JSON.stringify({
     success: true,
-    message: wasForwardedToSME
-      ? 'Transfer completed successfully. Both transfer and DTA signature complete - forwarded to SME.'
-      : 'Transfer completed successfully. Awaiting DTA signature before forwarding to SME.',
-    newStatus: updatedRequest?.status || 'active_transfer',
+    message: 'Transfer completed successfully. Ready for DTA signature.',
+    newStatus: 'active_transfer',
     filesTransferred,
-    requiresSmeSignature: !wasForwardedToSME
+    requiresDtaSignature: true
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
@@ -1265,10 +1256,11 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
       });
     }
     
-    // Update request with DTA signature (but keep in active_transfer initially)
+    // Update request with DTA signature and forward to SME immediately
     db.query(`
       UPDATE aft_requests
-      SET dta_signature_date = unixepoch(),
+      SET status = 'pending_sme_signature',
+          dta_signature_date = unixepoch(),
           assigned_sme_id = ?,
           updated_at = unixepoch()
       WHERE id = ?
@@ -1278,7 +1270,7 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
     db.query(`
       INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
       VALUES (?, 'DTA_SIGNED_MANUAL', ?, ?, unixepoch())
-    `).run(requestId, userEmail, `DTA manual signature completed. ${notes || ''}`);
+    `).run(requestId, userEmail, `DTA manual signature completed and forwarded to SME. ${notes || ''}`);
 
     // Log audit
     await auditLog(userId, 'DTA_MANUAL_SIGNATURE', `Manual signature applied to transfer ${requestId}`, ipAddress, {
@@ -1287,18 +1279,9 @@ async function signTransferManual(db: any, requestId: number, body: any, userId:
       signatureMethod: 'manual'
     });
 
-    // Check if both transfer completion and DTA signature are done, then forward to SME
-    await checkAndForwardToSME(db, requestId, userId, userEmail);
-
-    // Get updated request status to check if it was forwarded to SME
-    const updatedRequest = db.query("SELECT status FROM aft_requests WHERE id = ?").get(requestId) as any;
-    const wasForwardedToSME = updatedRequest?.status === 'pending_sme_signature';
-
     return new Response(JSON.stringify({
       success: true,
-      message: wasForwardedToSME
-        ? 'Transfer signed successfully. Both transfer and DTA signature complete - forwarded to SME.'
-        : 'Transfer signed successfully. Awaiting transfer completion before forwarding to SME.'
+      message: 'Transfer signed and forwarded to SME successfully'
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1367,32 +1350,24 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
       notes
     };
     
-    // Apply CAC signature (without workflow change)
-    const signatureResult = await CACSignatureManager.applyDTASignatureOnly(
+    // Apply CAC signature and forward to SME immediately
+    const signatureResult = await CACSignatureManager.applyDTASignature(
       requestId,
       userId,
       userEmail,
       signatureData,
+      smeUserId,
       ipAddress
     );
-    
+
     if (!signatureResult.success) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: signatureResult.error || 'Failed to apply CAC signature' 
-      }), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json' } 
+      return new Response(JSON.stringify({
+        success: false,
+        error: signatureResult.error || 'Failed to apply CAC signature'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
       });
-    }
-    
-    // Update SME assignment if provided
-    if (smeUserId) {
-      db.query(`
-        UPDATE aft_requests
-        SET assigned_sme_id = ?, sme_id = ?
-        WHERE id = ?
-      `).run(smeUserId, smeUserId, requestId);
     }
 
     // Log audit
@@ -1403,18 +1378,9 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
       certificateSubject: certificate.subject
     });
 
-    // Check if both transfer completion and DTA signature are done, then forward to SME
-    await checkAndForwardToSME(db, requestId, userId, userEmail);
-
-    // Get updated request status to check if it was forwarded to SME
-    const updatedRequest = db.query("SELECT status FROM aft_requests WHERE id = ?").get(requestId) as any;
-    const wasForwardedToSME = updatedRequest?.status === 'pending_sme_signature';
-
     return new Response(JSON.stringify({
       success: true,
-      message: wasForwardedToSME
-        ? 'Transfer signed with CAC signature successfully. Both transfer and DTA signature complete - forwarded to SME.'
-        : 'Transfer signed with CAC signature successfully. Awaiting transfer completion before forwarding to SME.'
+      message: 'Transfer signed with CAC signature and forwarded to SME successfully'
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1431,47 +1397,6 @@ async function signTransferWithCAC(db: any, requestId: number, body: any, userId
   }
 }
 
-// Helper function to check if both transfer completion and DTA signature are done, then forward to SME
-async function checkAndForwardToSME(db: any, requestId: number, userId: number, userEmail: string): Promise<void> {
-  const request = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId) as any;
-
-  if (!request) return;
-
-  // Check if both conditions are met
-  const transferCompleted = !!request.transfer_completed_date;
-  const dtaSigned = !!request.dta_signature_date;
-  const smeAssigned = !!request.assigned_sme_id || !!request.sme_id;
-
-  if (transferCompleted && dtaSigned && smeAssigned && request.status === 'active_transfer') {
-    // Forward to SME
-    const smeId = request.assigned_sme_id || request.sme_id;
-
-    db.query(`
-      UPDATE aft_requests
-      SET status = 'pending_sme_signature',
-          assigned_sme_id = ?,
-          updated_at = unixepoch()
-      WHERE id = ?
-    `).run(smeId, requestId);
-
-    // Get SME details for logging
-    const smeUser = db.query(`
-      SELECT id, email, first_name || ' ' || last_name as name
-      FROM users
-      WHERE id = ?
-    `).get(smeId) as any;
-
-    RequestTrackingService.addAuditEntry(
-      requestId,
-      userId,
-      'forwarded_to_sme',
-      'active_transfer',
-      'pending_sme_signature',
-      JSON.stringify({ smeId, smeName: smeUser?.name }),
-      `Transfer completed and DTA signed. Forwarded to SME ${smeUser?.name || smeId} for Two-Person Integrity verification.`
-    );
-  }
-}
 
 // Get client certificate information for CAC authentication
 function getCACInfo(session?: any): Response {

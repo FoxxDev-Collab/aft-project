@@ -7,33 +7,33 @@ export class DTADataManagement {
   static async render(user: DTAUser, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get actual DTA transfer history and scan data
-    const transferHistory = this.getTransferHistory(db);
-    const scanStatistics = this.getScanStatistics(db);
-    const recentTransfers = this.getRecentDTATransfers(db);
+    // Get actual DTA transfer history and scan data for this specific DTA
+    const transferHistory = this.getTransferHistory(db, userId);
+    const scanStatistics = this.getScanStatistics(db, userId);
+    const recentTransfers = this.getRecentDTATransfers(db, userId);
 
     // Build Section 4 tracking cards
     const transferHistoryCard = Templates.adminCard({
-      title: 'Transfer History',
-      description: 'View all transfers managed by DTA with Section 4 completion status',
+      title: 'My Transfer History',
+      description: `You have processed ${transferHistory.totalTransfers} transfers with ${transferHistory.totalFilesTransferred.toLocaleString()} files transferred`,
       primaryAction: { label: 'View Full History', onClick: 'showTransferHistory()' },
       secondaryAction: { label: 'Export History', onClick: 'exportTransferHistory()' },
-      status: { 
-        label: 'Total Transfers', 
-        value: transferHistory.totalTransfers.toString(), 
-        status: 'operational' 
+      status: {
+        label: 'Total Transfers',
+        value: transferHistory.totalTransfers.toString(),
+        status: 'operational'
       }
     });
 
     const antivirusScanCard = Templates.adminCard({
-      title: 'Anti-Virus Scan Records',
-      description: 'Section 4 anti-virus scan tracking and threat detection history',
+      title: 'My Anti-Virus Scan Records',
+      description: `You have completed ${scanStatistics.totalScans} scans on ${scanStatistics.totalFilesScanned.toLocaleString()} files with ${scanStatistics.threatsFound} threats detected`,
       primaryAction: { label: 'View Scan Records', onClick: 'showScanRecords()' },
       secondaryAction: { label: 'Scan Report', onClick: 'generateScanReport()' },
-      status: { 
-        label: 'Scans Performed', 
-        value: scanStatistics.totalScans.toString(), 
-        status: scanStatistics.threatsFound > 0 ? 'warning' : 'operational' 
+      status: {
+        label: 'Scans Performed',
+        value: scanStatistics.totalScans.toString(),
+        status: scanStatistics.threatsFound > 0 ? 'warning' : 'operational'
       }
     });
 
@@ -41,19 +41,22 @@ export class DTADataManagement {
     // Build transfer tracking table
     const transferTrackingTable = this.buildTransferTrackingTable(recentTransfers);
 
-    // Build Section 4 statistics
+    // Build Section 4 statistics with accumulated data
     const statsCard = DTANavigation.renderQuickStats([
-      { label: 'DTA Transfers', value: transferHistory.totalTransfers, status: 'operational' },
+      { label: 'Total Transfers', value: transferHistory.totalTransfers, status: 'operational' },
+      { label: 'Files Transferred', value: transferHistory.totalFilesTransferred.toLocaleString(), status: 'operational' },
+      { label: 'Completed Transfers', value: transferHistory.completedTransfers, status: 'operational' },
+      { label: 'DTA Signatures', value: transferHistory.signedTransfers, status: 'operational' },
       { label: 'AV Scans Completed', value: scanStatistics.totalScans, status: 'operational' },
-      { label: 'Threats Detected', value: scanStatistics.threatsFound, status: scanStatistics.threatsFound > 0 ? 'warning' : 'operational' },
-      { label: 'Files Scanned', value: scanStatistics.originationScans + scanStatistics.destinationScans, status: 'operational' }
+      { label: 'Files Scanned', value: scanStatistics.totalFilesScanned.toLocaleString(), status: 'operational' },
+      { label: 'Threats Detected', value: scanStatistics.threatsFound, status: scanStatistics.threatsFound > 0 ? 'warning' : 'operational' }
     ]);
 
     const content = `
       <div class="space-y-8">
         ${ComponentBuilder.sectionHeader({
-          title: 'DTA Data Tracking',
-          description: 'Section 4 transfer history, anti-virus scan records, and DTA signature tracking'
+          title: 'My DTA Data & Transfer History',
+          description: `Personal transfer statistics, file tracking, and Section 4 compliance records for ${user.email}`
         })}
         
         ${ComponentBuilder.grid({
@@ -64,63 +67,87 @@ export class DTADataManagement {
         })}
         
         <div>
-          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">DTA Statistics</h3>
+          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">My Transfer & Scan Statistics</h3>
           ${statsCard}
         </div>
-        
+
         <div>
-          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">Transfer History</h3>
+          <h3 class="text-xl font-semibold text-[var(--foreground)] mb-6">Recent Transfer History (Last 20)</h3>
           ${transferTrackingTable}
         </div>
       </div>
     `;
 
     return DTANavigation.renderLayout(
-      'Data Tracking',
-      'Transfer History and Anti-Virus Scan Records',
+      'Data Management',
+      'My transfer history, file tracking, and accumulated data statistics',
       user,
       '/dta/data',
       content
     );
   }
 
-  private static getTransferHistory(db: any) {
-    // Get actual DTA transfer statistics
-    const stats = db.query(`
-      SELECT 
-        COUNT(*) as total_transfers
-      FROM aft_requests 
-      WHERE status IN ('active_transfer', 'pending_sme_signature', 'completed', 'disposed')
-    `).get() as any;
+  private static getTransferHistory(db: any, userId?: number) {
+    // Get actual DTA transfer statistics with file and data size accumulation
+    const baseQuery = userId ?
+      `SELECT
+        COUNT(*) as total_transfers,
+        SUM(COALESCE(files_transferred_count, 0)) as total_files_transferred,
+        COUNT(CASE WHEN transfer_completed_date IS NOT NULL THEN 1 END) as completed_transfers,
+        COUNT(CASE WHEN dta_signature_date IS NOT NULL THEN 1 END) as signed_transfers
+      FROM aft_requests
+      WHERE dta_id = ? AND status IN ('active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed', 'disposed')` :
+      `SELECT
+        COUNT(*) as total_transfers,
+        SUM(COALESCE(files_transferred_count, 0)) as total_files_transferred,
+        COUNT(CASE WHEN transfer_completed_date IS NOT NULL THEN 1 END) as completed_transfers,
+        COUNT(CASE WHEN dta_signature_date IS NOT NULL THEN 1 END) as signed_transfers
+      FROM aft_requests
+      WHERE status IN ('active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed', 'disposed')`;
+
+    const stats = userId ? db.query(baseQuery).get(userId) : db.query(baseQuery).get() as any;
 
     return {
-      totalTransfers: stats?.total_transfers || 0
+      totalTransfers: stats?.total_transfers || 0,
+      totalFilesTransferred: stats?.total_files_transferred || 0,
+      completedTransfers: stats?.completed_transfers || 0,
+      signedTransfers: stats?.signed_transfers || 0
     };
   }
 
-  private static getScanStatistics(db: any) {
+  private static getScanStatistics(db: any, userId?: number) {
     // Get actual anti-virus scan statistics from Section 4 data
-    const scanStats = db.query(`
-      SELECT 
+    const baseQuery = userId ?
+      `SELECT
         COUNT(CASE WHEN origination_scan_performed = 1 THEN 1 END) as origination_scans,
         COUNT(CASE WHEN destination_scan_performed = 1 THEN 1 END) as destination_scans,
-        SUM(COALESCE(origination_threats_found, 0) + COALESCE(destination_threats_found, 0)) as total_threats
+        SUM(COALESCE(origination_threats_found, 0) + COALESCE(destination_threats_found, 0)) as total_threats,
+        SUM(COALESCE(origination_files_scanned, 0) + COALESCE(destination_files_scanned, 0)) as total_files_scanned
       FROM aft_requests
-      WHERE status IN ('active_transfer', 'pending_sme_signature', 'completed', 'disposed')
-    `).get() as any;
+      WHERE dta_id = ? AND status IN ('active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed', 'disposed')` :
+      `SELECT
+        COUNT(CASE WHEN origination_scan_performed = 1 THEN 1 END) as origination_scans,
+        COUNT(CASE WHEN destination_scan_performed = 1 THEN 1 END) as destination_scans,
+        SUM(COALESCE(origination_threats_found, 0) + COALESCE(destination_threats_found, 0)) as total_threats,
+        SUM(COALESCE(origination_files_scanned, 0) + COALESCE(destination_files_scanned, 0)) as total_files_scanned
+      FROM aft_requests
+      WHERE status IN ('active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed', 'disposed')`;
+
+    const scanStats = userId ? db.query(baseQuery).get(userId) : db.query(baseQuery).get() as any;
 
     return {
       totalScans: (scanStats?.origination_scans || 0) + (scanStats?.destination_scans || 0),
       originationScans: scanStats?.origination_scans || 0,
       destinationScans: scanStats?.destination_scans || 0,
-      threatsFound: scanStats?.total_threats || 0
+      threatsFound: scanStats?.total_threats || 0,
+      totalFilesScanned: scanStats?.total_files_scanned || 0
     };
   }
 
-  private static getRecentDTATransfers(db: any) {
+  private static getRecentDTATransfers(db: any, userId?: number) {
     // Get recent transfers that DTA has handled
-    return db.query(`
-      SELECT 
+    const baseQuery = userId ?
+      `SELECT
         r.id,
         r.request_number,
         r.status,
@@ -130,6 +157,8 @@ export class DTADataManagement {
         r.destination_threats_found,
         r.origination_files_scanned,
         r.destination_files_scanned,
+        r.files_transferred_count,
+        r.file_size,
         r.transfer_completed_date,
         r.dta_signature_date,
         r.created_at,
@@ -137,10 +166,33 @@ export class DTADataManagement {
         COALESCE(u.first_name || ' ' || u.last_name, u.email) as requestor_name
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
-      WHERE r.status IN ('active_transfer', 'pending_sme_signature', 'completed', 'disposed')
+      WHERE r.dta_id = ? AND r.status IN ('active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed', 'disposed')
       ORDER BY r.updated_at DESC
-      LIMIT 20
-    `).all() as any[];
+      LIMIT 20` :
+      `SELECT
+        r.id,
+        r.request_number,
+        r.status,
+        r.origination_scan_performed,
+        r.destination_scan_performed,
+        r.origination_threats_found,
+        r.destination_threats_found,
+        r.origination_files_scanned,
+        r.destination_files_scanned,
+        r.files_transferred_count,
+        r.file_size,
+        r.transfer_completed_date,
+        r.dta_signature_date,
+        r.created_at,
+        r.updated_at,
+        COALESCE(u.first_name || ' ' || u.last_name, u.email) as requestor_name
+      FROM aft_requests r
+      LEFT JOIN users u ON r.requestor_id = u.id
+      WHERE r.status IN ('active_transfer', 'pending_sme_signature', 'pending_media_custodian', 'completed', 'disposed')
+      ORDER BY r.updated_at DESC
+      LIMIT 20`;
+
+    return userId ? db.query(baseQuery).all(userId) : db.query(baseQuery).all() as any[];
   }
 
   private static buildTransferTrackingTable(transfers: any[]): string {
@@ -166,6 +218,8 @@ export class DTADataManagement {
       destination_threats_found: transfer.destination_threats_found || 0,
       origination_files_scanned: transfer.origination_files_scanned || 0,
       destination_files_scanned: transfer.destination_files_scanned || 0,
+      files_transferred_count: transfer.files_transferred_count || 0,
+      file_size: transfer.file_size || 'Unknown',
       transfer_completed_date: transfer.transfer_completed_date,
       dta_signature_date: transfer.dta_signature_date,
       created_at: transfer.created_at,
@@ -217,6 +271,24 @@ export class DTADataManagement {
         render: (value: any, row: any) => `
           <div class="text-sm text-[var(--foreground)]">
             ${(row.origination_files_scanned || 0) + (row.destination_files_scanned || 0)} files
+          </div>
+        `
+      },
+      {
+        key: 'files_transferred',
+        label: 'Files Transferred',
+        render: (value: any, row: any) => `
+          <div class="text-sm text-[var(--foreground)]">
+            ${row.files_transferred_count > 0 ? `${row.files_transferred_count.toLocaleString()} files` : 'Not completed'}
+          </div>
+        `
+      },
+      {
+        key: 'file_size',
+        label: 'Data Size',
+        render: (value: any, row: any) => `
+          <div class="text-sm text-[var(--foreground)]">
+            ${row.file_size !== 'Unknown' ? row.file_size : 'N/A'}
           </div>
         `
       },
@@ -319,11 +391,11 @@ export class DTADataManagement {
   static getScript(): string {
     return `
       function showTransferHistory() {
-        alert('Transfer History:\\n\\nThis would show a comprehensive view of all DTA transfers including:\\n• Complete Section 4 workflow history\\n• Anti-virus scan records\\n• Transfer completion timestamps\\n• DTA signature tracking\\n• Audit trail for compliance');
+        alert('My Transfer History:\\n\\nThis would show your comprehensive transfer history including:\\n• All transfers you have processed as DTA\\n• Files transferred counts and data sizes\\n• Section 4 completion timestamps\\n• Your DTA signature records\\n• Personal compliance metrics');
       }
-      
+
       function exportTransferHistory() {
-        alert('Exporting transfer history...\\n\\nThis would generate a comprehensive report including:\\n• All DTA-managed transfers\\n• Section 4 completion data\\n• Timeline information\\n• Compliance metrics');
+        alert('Exporting my transfer history...\\n\\nThis would generate your personal DTA report including:\\n• All transfers you have managed\\n• Accumulated file counts and data sizes\\n• Your Section 4 completion statistics\\n• Personal productivity metrics');
       }
       
       function showScanRecords() {
