@@ -769,9 +769,143 @@ export class CACSignatureManager {
         { requestId, error: String(error) }
       );
 
-      return { 
-        success: false, 
-        error: `Failed to apply signature: ${error}` 
+      return {
+        success: false,
+        error: `Failed to apply signature: ${error}`
+      };
+    }
+  }
+
+  // Apply SME CAC signature to complete two-person integrity check
+  static async applySMESignature(
+    requestId: number,
+    signerId: number,
+    signerEmail: string,
+    signatureData: CACSignatureData,
+    ipAddress: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const db = getDb();
+
+    try {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+
+      // Verify request exists and is ready for SME signature
+      const request = db.query(`
+        SELECT id, status, assigned_sme_id
+        FROM aft_requests
+        WHERE id = ? AND status = 'pending_sme_signature'
+      `).get(requestId) as any;
+
+      if (!request) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: 'Request not found or not ready for SME signature'
+        };
+      }
+
+      // Verify this SME is assigned to this request
+      if (request.assigned_sme_id && request.assigned_sme_id !== signerId) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: 'You are not assigned to sign this request'
+        };
+      }
+
+      // Verify certificate validity
+      const certValid = this.verifyCertificateValidity(signatureData.certificate);
+      if (!certValid.isValid) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: certValid.error || 'Certificate validation failed'
+        };
+      }
+
+      // Generate signature hash for integrity
+      const signatureHash = await this.generateSignatureHash(signatureData);
+
+      // Store CAC signature
+      const signatureId = db.query(`
+        INSERT INTO cac_signatures (
+          request_id, user_id, step_type,
+          certificate_thumbprint, certificate_subject, certificate_issuer,
+          certificate_serial, certificate_not_before, certificate_not_after,
+          signature_data, signed_data, signature_algorithm, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+      `).run(
+        requestId,
+        signerId,
+        'sme_signature',
+        signatureData.certificate.thumbprint,
+        signatureData.certificate.subject,
+        signatureData.certificate.issuer,
+        signatureData.certificate.serialNumber,
+        new Date(signatureData.certificate.validFrom).getTime() / 1000,
+        new Date(signatureData.certificate.validTo).getTime() / 1000,
+        signatureData.signature,
+        JSON.stringify(signatureData),
+        signatureData.algorithm
+      ).lastInsertRowid as number;
+
+      // Update request status to forward to media custodian
+      db.query(`
+        UPDATE aft_requests
+        SET status = 'pending_media_custodian',
+            sme_signature_date = unixepoch(),
+            updated_at = unixepoch()
+        WHERE id = ?
+      `).run(requestId);
+
+      // Add to request history
+      db.query(`
+        INSERT INTO aft_request_history (request_id, action, notes, user_email)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        requestId,
+        'SME_SIGNED_CAC',
+        `SME CAC signature applied. Two-Person Integrity check completed. Signature ID: ${signatureId}${signatureData.notes ? '. Notes: ' + signatureData.notes : ''}`,
+        signerEmail
+      );
+
+      // Commit transaction
+      db.exec('COMMIT');
+
+      // Audit log
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_SME',
+        `SME CAC signature applied to request ${requestId}`,
+        ipAddress,
+        {
+          requestId,
+          signatureId,
+          certificateThumbprint: signatureData.certificate.thumbprint,
+          certificateSubject: signatureData.certificate.subject
+        }
+      );
+
+      console.log(`✅ SME CAC signature applied to request ${requestId} by user ${signerId}`);
+
+      return { success: true };
+
+    } catch (error) {
+      db.exec('ROLLBACK');
+      console.error('Error applying SME CAC signature:', error);
+
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_SME_FAILED',
+        `Failed to apply SME CAC signature to request ${requestId}: ${error}`,
+        ipAddress,
+        { requestId, error: String(error) }
+      );
+
+      return {
+        success: false,
+        error: `Failed to apply signature: ${error}`
       };
     }
   }

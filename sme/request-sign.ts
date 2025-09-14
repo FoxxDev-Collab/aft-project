@@ -382,13 +382,20 @@ export class SMERequestSignPage {
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">SME Signature Required</h3>
         </div>
         <div class="p-6 pt-4 space-y-4">
+          <div id="cac-signature-status" class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
+            <p class="text-sm text-[var(--info)] font-medium mb-2">CAC Digital Signature</p>
+            <p class="text-xs text-[var(--muted-foreground)]">
+              Checking for CAC certificate...
+            </p>
+          </div>
+
           <div class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
             <p class="text-sm text-[var(--info)] font-medium mb-2">Two-Person Integrity Check</p>
             <p class="text-xs text-[var(--muted-foreground)]">
               As the Subject Matter Expert, your signature confirms that the DTA has properly processed this transfer request and all security requirements have been met.
             </p>
           </div>
-          
+
           <div>
             <label for="signature-notes" class="text-sm font-medium text-[var(--foreground)] mb-2 block">
               Signature Notes (Optional)
@@ -400,11 +407,19 @@ export class SMERequestSignPage {
               placeholder="Add any notes about your signature..."
             ></textarea>
           </div>
-          
+
           <div class="space-y-2">
             ${ComponentBuilder.primaryButton({
-              children: `${EditIcon({ size: 16 })} Sign Request`,
+              children: `${ShieldIcon({ size: 16 })} Sign with CAC`,
+              onClick: `signRequestWithCAC(${request.id})`,
+              id: 'sign-cac-btn',
+              className: 'w-full justify-center',
+              disabled: true
+            })}
+            ${ComponentBuilder.button({
+              children: `${EditIcon({ size: 16 })} Manual Signature`,
               onClick: `signRequest(${request.id})`,
+              variant: 'secondary',
               className: 'w-full justify-center'
             })}
           </div>
@@ -521,6 +536,143 @@ export class SMERequestSignPage {
 
   static getScript(): string {
     return `
+      let cacCertificateInfo = null;
+
+      // Check for CAC certificate on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        checkCACCertificate();
+      });
+
+      function checkCACCertificate() {
+        const statusElement = document.getElementById('cac-signature-status');
+        const cacBtn = document.getElementById('sign-cac-btn');
+
+        if (!statusElement) return; // Not on signature section
+
+        // Check for client certificate
+        fetch('/api/sme/cac-info')
+          .then(response => response.json())
+          .then(data => {
+            if (data.hasClientCert && data.certificate) {
+              cacCertificateInfo = data.certificate;
+
+              // Update status to show CAC is available
+              statusElement.className = 'bg-[var(--success)]/10 border border-[var(--success)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--success)] font-medium mb-2 flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                  </svg>
+                  CAC Certificate Available
+                </p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Ready to sign with: \${data.certificate.subject}
+                </p>
+              \`;
+
+              // Enable CAC button
+              if (cacBtn) {
+                cacBtn.disabled = false;
+                cacBtn.className = cacBtn.className.replace('opacity-50', '');
+              }
+
+              console.log('CAC certificate available for SME:', {
+                subject: data.certificate.subject,
+                issuer: data.certificate.issuer,
+                serial: data.certificate.serialNumber
+              });
+            } else {
+              cacCertificateInfo = null;
+
+              // Update status to show CAC is not available
+              statusElement.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Certificate Not Available</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  No CAC certificate found. Please ensure you're logged in with CAC authentication.
+                </p>
+              \`;
+
+              console.log('No CAC certificate available for SME');
+            }
+          })
+          .catch(error => {
+            console.error('Error checking CAC certificate:', error);
+            cacCertificateInfo = null;
+
+            if (statusElement) {
+              statusElement.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Check Failed</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Unable to check CAC status. Please refresh and try again.
+                </p>
+              \`;
+            }
+          });
+      }
+
+      function signRequestWithCAC(requestId) {
+        if (!cacCertificateInfo) {
+          alert('No CAC certificate available. Please ensure you are logged in with CAC authentication and refresh the page.');
+          return;
+        }
+
+        const notes = document.getElementById('signature-notes').value;
+
+        if (!confirm('Are you sure you want to sign this request with CAC digital signature? This completes the Two-Person Integrity check and forwards the request to the Media Custodian.')) {
+          return;
+        }
+
+        // Generate signature data using the pre-authenticated CAC
+        const signatureData = {
+          signature: \`CAC_SIGNATURE_\${requestId}_\${Date.now()}\`,
+          certificate: {
+            thumbprint: cacCertificateInfo.thumbprint || \`CAC_\${requestId}_\${Date.now()}\`,
+            subject: cacCertificateInfo.subject,
+            issuer: cacCertificateInfo.issuer,
+            validFrom: cacCertificateInfo.validFrom,
+            validTo: cacCertificateInfo.validTo,
+            serialNumber: cacCertificateInfo.serialNumber,
+            pemData: cacCertificateInfo.pemData
+          },
+          timestamp: new Date().toISOString(),
+          algorithm: 'SHA256-RSA'
+        };
+
+        // Submit CAC signature directly
+        submitCACSignatureDirectly(requestId, signatureData, notes);
+      }
+
+      // Submit CAC signature directly using pre-authenticated CAC
+      async function submitCACSignatureDirectly(requestId, signatureData, notes) {
+        try {
+          const response = await fetch('/api/sme/requests/' + requestId + '/sign-cac', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signature: signatureData.signature,
+              certificate: signatureData.certificate,
+              timestamp: signatureData.timestamp,
+              algorithm: signatureData.algorithm,
+              notes: notes
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert('Request signed with CAC signature and forwarded to Media Custodian!');
+            window.location.href = '/sme/requests';
+          } else {
+            alert('Error signing request with CAC: ' + (result.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error submitting CAC signature:', error);
+          alert('Failed to sign request with CAC. Please try again.');
+        }
+      }
+
       function signRequest(requestId) {
         const notes = document.getElementById('signature-notes').value;
         

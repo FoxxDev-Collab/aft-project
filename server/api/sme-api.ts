@@ -2,6 +2,8 @@
 import { getDb, UserRole } from "../../lib/database-bun";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { RequestTrackingService } from "../../lib/request-tracking";
+import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
+import { auditLog } from "../../lib/security";
 
 export async function handleSMEAPI(request: Request, path: string, ipAddress: string): Promise<Response | null> {
   if (!path.startsWith('/api/sme/')) {
@@ -13,6 +15,11 @@ export async function handleSMEAPI(request: Request, path: string, ipAddress: st
 
   const url = new URL(request.url);
   const pathSegments = url.pathname.split('/');
+
+  // Path: /api/sme/cac-info
+  if (pathSegments[3] === 'cac-info' && request.method === 'GET') {
+    return getCACInfo(authResult.session);
+  }
 
   // Path: /api/sme/requests/:id
   if (pathSegments[3] === 'requests' && pathSegments.length >= 5) {
@@ -28,6 +35,11 @@ export async function handleSMEAPI(request: Request, path: string, ipAddress: st
         return new Response(JSON.stringify({ success: false, error: 'User session invalid' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
       }
       return signRequest(requestId, authResult.session.email, authResult.session.userId, request);
+    } else if (request.method === 'POST' && pathSegments[5] === 'sign-cac') {
+      if (!authResult.session.email || !authResult.session.userId) {
+        return new Response(JSON.stringify({ success: false, error: 'User session invalid' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      }
+      return signRequestWithCAC(requestId, authResult.session.email, authResult.session.userId, request, ipAddress);
     }
   }
 
@@ -94,5 +106,135 @@ async function signRequest(requestId: number, smeEmail: string, smeUserId: numbe
   } catch (error: any) {
     console.error('Error signing request:', error);
     return new Response(JSON.stringify({ success: false, error: 'Database error while signing request.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+async function signRequestWithCAC(requestId: number, smeEmail: string, smeUserId: number, request: Request, ipAddress: string): Promise<Response> {
+  const db = getDb();
+
+  try {
+    const body = await request.json() as {
+      signature: string;
+      certificate: any;
+      timestamp: string;
+      algorithm: string;
+      notes?: string;
+    };
+    const { signature, certificate, timestamp, algorithm, notes } = body;
+
+    const requestData = db.query("SELECT * FROM aft_requests WHERE id = ?").get(requestId) as any;
+
+    if (!requestData) {
+      return new Response(JSON.stringify({ success: false, error: 'Request not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (requestData.status !== 'pending_sme_signature') {
+      return new Response(JSON.stringify({ success: false, error: `Request is not pending SME signature. Current status: ${requestData.status}` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // Validate signature data
+    if (!signature || !certificate || !timestamp || !algorithm) {
+      return new Response(JSON.stringify({ error: 'Invalid signature data' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Construct CAC signature data
+    const signatureData: CACSignatureData = {
+      signature,
+      certificate,
+      timestamp,
+      algorithm,
+      notes
+    };
+
+    // Apply CAC signature for SME
+    const signatureResult = await CACSignatureManager.applySMESignature(
+      requestId,
+      smeUserId,
+      smeEmail,
+      signatureData,
+      ipAddress
+    );
+
+    if (!signatureResult.success) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: signatureResult.error || 'Failed to apply CAC signature'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Audit log
+    await auditLog(
+      smeUserId,
+      'SME_CAC_SIGNATURE',
+      `CAC signature applied to request ${requestId} by SME`,
+      ipAddress,
+      {
+        requestId,
+        certificateThumbprint: certificate.thumbprint,
+        certificateSubject: certificate.subject
+      }
+    );
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Request signed with CAC signature and forwarded to Media Custodian'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error: any) {
+    console.error('Error signing request with CAC:', error);
+    return new Response(JSON.stringify({ success: false, error: 'Failed to apply CAC signature' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Get client certificate information for CAC authentication
+function getCACInfo(session?: any): Response {
+  try {
+    // First check if we have CAC info stored in the session
+    let hasCACCert = false;
+    let certInfo = null;
+
+    if (session?.cacCertificate) {
+      // Use CAC from session
+      hasCACCert = true;
+      certInfo = session.cacCertificate;
+      console.log('Using CAC Certificate from session for SME:', {
+        subject: certInfo.subject,
+        issuer: certInfo.issuer,
+        serial: certInfo.serialNumber
+      });
+    } else {
+      // No client certificate provided
+      hasCACCert = false;
+      certInfo = null;
+      console.log('No CAC certificate found in session for SME');
+    }
+
+    return new Response(JSON.stringify({
+      hasClientCert: hasCACCert,
+      certificate: certInfo
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('Error getting CAC info for SME:', error);
+    return new Response(JSON.stringify({
+      hasClientCert: false,
+      certificate: null,
+      error: 'Failed to retrieve CAC information'
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
