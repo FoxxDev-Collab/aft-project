@@ -909,6 +909,139 @@ export class CACSignatureManager {
       };
     }
   }
+
+  // Apply DTA CAC signature without workflow status changes (for signing only)
+  static async applyDTASignatureOnly(
+    requestId: number,
+    signerId: number,
+    signerEmail: string,
+    signatureData: CACSignatureData,
+    ipAddress: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const db = getDb();
+
+    try {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+
+      // Verify request exists and DTA has access
+      const request = db.query(`
+        SELECT id, status, dta_id
+        FROM aft_requests
+        WHERE id = ? AND dta_id = ?
+      `).get(requestId, signerId) as any;
+
+      if (!request) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: 'Request not found or access denied'
+        };
+      }
+
+      // Verify request is in active transfer status
+      if (request.status !== 'active_transfer') {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: `Request must be in active transfer status. Current status: ${request.status}`
+        };
+      }
+
+      // Verify certificate validity
+      const certValid = this.verifyCertificateValidity(signatureData.certificate);
+      if (!certValid.isValid) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: certValid.error || 'Certificate validation failed'
+        };
+      }
+
+      // Generate signature hash for integrity
+      const signatureHash = await this.generateSignatureHash(signatureData);
+
+      // Store CAC signature
+      const signatureId = db.query(`
+        INSERT INTO cac_signatures (
+          request_id, user_id, step_type,
+          certificate_thumbprint, certificate_subject, certificate_issuer,
+          certificate_serial, certificate_not_before, certificate_not_after,
+          signature_data, signed_data, signature_algorithm, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+      `).run(
+        requestId,
+        signerId,
+        'dta_signature_only',
+        signatureData.certificate.thumbprint,
+        signatureData.certificate.subject,
+        signatureData.certificate.issuer,
+        signatureData.certificate.serialNumber,
+        new Date(signatureData.certificate.validFrom).getTime() / 1000,
+        new Date(signatureData.certificate.validTo).getTime() / 1000,
+        signatureData.signature,
+        JSON.stringify(signatureData),
+        signatureData.algorithm
+      ).lastInsertRowid as number;
+
+      // Update DTA signature date only (do NOT change status)
+      db.query(`
+        UPDATE aft_requests
+        SET dta_signature_date = unixepoch(),
+            updated_at = unixepoch()
+        WHERE id = ?
+      `).run(requestId);
+
+      // Add to request history
+      db.query(`
+        INSERT INTO aft_request_history (request_id, action, notes, user_email)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        requestId,
+        'DTA_SIGNED_CAC_ONLY',
+        `DTA CAC signature applied. Signature ID: ${signatureId}${signatureData.notes ? '. Notes: ' + signatureData.notes : ''}`,
+        signerEmail
+      );
+
+      // Commit transaction
+      db.exec('COMMIT');
+
+      // Audit log
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_DTA_ONLY',
+        `DTA CAC signature applied to request ${requestId} (no workflow change)`,
+        ipAddress,
+        {
+          requestId,
+          signatureId,
+          certificateThumbprint: signatureData.certificate.thumbprint,
+          certificateSubject: signatureData.certificate.subject
+        }
+      );
+
+      console.log(`✅ DTA CAC signature applied to request ${requestId} by user ${signerId} (no workflow change)`);
+
+      return { success: true };
+
+    } catch (error) {
+      db.exec('ROLLBACK');
+      console.error('Error applying DTA CAC signature:', error);
+
+      await auditLog(
+        signerId,
+        'CAC_SIGNATURE_DTA_ONLY_FAILED',
+        `Failed to apply DTA CAC signature to request ${requestId}: ${error}`,
+        ipAddress,
+        { requestId, error: String(error) }
+      );
+
+      return {
+        success: false,
+        error: `Failed to apply signature: ${error}`
+      };
+    }
+  }
 }
 
 // Initialize tables when module is imported

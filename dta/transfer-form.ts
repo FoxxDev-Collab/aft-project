@@ -713,7 +713,7 @@ export class DTATransferForm {
           const result = await response.json();
 
           if (result.success) {
-            alert('Transfer signed with CAC signature and forwarded to SME!');
+            alert('Transfer signed with CAC signature successfully!');
             window.location.reload();
           } else {
             alert('Error signing transfer with CAC: ' + (result.error || 'Unknown error'));
