@@ -492,21 +492,61 @@ export class RequestReviewPage {
             Digital Signatures
           </h3>
         </div>
-        <div class="p-6 pt-0 space-y-3">
+        <div class="p-6 pt-0 space-y-4">
           ${signatures.map(sig => {
-            const display = CACSignatureManager.formatSignatureForDisplay(sig);
             return `
-              <div class="border border-[var(--border)] rounded-lg p-4 bg-[var(--muted)]">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="flex items-center gap-2">
-                    <div class="w-2 h-2 rounded-full ${display.isValid ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}"></div>
-                    <span class="text-sm font-medium text-[var(--foreground)]">${display.signerName}</span>
+              <div class="border border-[var(--border)] rounded-lg p-6 bg-[var(--background)]">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                  </svg>
+                  ${sig.step_type === 'ISSM' ? 'ISSM (Approver)' : sig.step_type === 'CPSO' ? 'CPSO' : 'Requestor'} CAC Digital Signature
+                </h3>
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Signed By</label>
+                      <div class="text-gray-900 font-medium">${sig.signer_name || sig.signer_email}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Signature Date</label>
+                      <div class="text-gray-900">${new Date(sig.signature_timestamp).toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Certificate Subject</label>
+                      <div class="text-gray-900 text-sm font-mono break-all">${sig.certificate_subject}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Certificate Issuer</label>
+                      <div class="text-gray-900 text-sm font-mono break-all">${sig.certificate_issuer}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Certificate Serial</label>
+                      <div class="text-gray-900 font-mono">${sig.certificate_serial}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Signature Algorithm</label>
+                      <div class="text-gray-900">${sig.signature_algorithm}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Certificate Valid From</label>
+                      <div class="text-gray-900">${new Date(sig.certificate_not_before * 1000).toLocaleDateString()}</div>
+                    </div>
+                    <div>
+                      <label class="text-sm font-medium text-gray-600">Certificate Valid To</label>
+                      <div class="text-gray-900">${new Date(sig.certificate_not_after * 1000).toLocaleDateString()}</div>
+                    </div>
                   </div>
-                  <span class="text-xs text-[var(--muted-foreground)]">${sig.step_type || 'signature'}</span>
-                </div>
-                <div class="text-xs text-[var(--muted-foreground)] space-y-1">
-                  <div>Signed: ${display.signedAt}</div>
-                  <div class="font-mono">${display.certificateInfo}</div>
+                  <div class="mt-4 pt-4 border-t border-green-200">
+                    <label class="text-sm font-medium text-gray-600">Digital Signature Hash</label>
+                    <div class="text-gray-900 text-xs font-mono break-all bg-gray-50 p-2 rounded mt-1">${sig.signature_data}</div>
+                  </div>
+                  ${sig.notes ? `
+                  <div class="mt-3">
+                    <label class="text-sm font-medium text-gray-600">Notes</label>
+                    <div class="text-gray-900">${sig.notes}</div>
+                  </div>
+                  ` : ''}
                 </div>
               </div>
             `;
