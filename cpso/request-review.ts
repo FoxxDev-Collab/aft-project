@@ -301,7 +301,7 @@ export class RequestReviewPage {
   }
 
   private static renderApprovalActions(request: any): string {
-    if (['approved', 'rejected', 'completed', 'cancelled'].includes(request.status)) {
+    if (['approved', 'rejected', 'completed', 'cancelled', 'pending_dta', 'active_transfer'].includes(request.status)) {
       return ComponentBuilder.card({
         children: `
           <div class="p-6 pb-0">
@@ -309,7 +309,12 @@ export class RequestReviewPage {
           </div>
           <div class="text-center py-4">
             <p class="text-sm text-[var(--muted-foreground)] mb-4">
-              This request has already been ${request.status === 'approved' ? 'approved' : request.status}.
+              This request has already been ${
+                request.status === 'approved' ? 'approved' :
+                request.status === 'pending_dta' ? 'approved by CPSO and forwarded to DTA' :
+                request.status === 'active_transfer' ? 'approved and is in active transfer' :
+                request.status
+              }.
             </p>
             ${ComponentBuilder.button({
               children: 'Back to Pending',

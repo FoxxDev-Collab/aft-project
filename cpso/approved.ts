@@ -8,9 +8,9 @@ export class CPSOApprovedRequestsPage {
   static async render(user: CPSOUser, userId: number): Promise<string> {
     const db = getDb();
     
-    // Get all approved requests by this CPSO
+    // Get all requests approved by this CPSO (status is 'pending_dta' after CPSO approval)
     const approvedRequests = db.query(`
-      SELECT 
+      SELECT
         r.*,
         u.email as requestor_email,
         u.first_name || ' ' || u.last_name as requestor_name,
@@ -19,9 +19,14 @@ export class CPSOApprovedRequestsPage {
       FROM aft_requests r
       LEFT JOIN users u ON r.requestor_id = u.id
       LEFT JOIN users a ON r.approver_id = a.id
-      WHERE r.status = 'approved' AND r.approver_email = ?
+      LEFT JOIN aft_request_history h ON r.id = h.request_id
+      WHERE (r.status IN ('pending_dta', 'completed', 'active_transfer')
+             AND h.action = 'CPSO_APPROVED_CAC'
+             AND h.user_email = ?)
+         OR (r.status = 'approved' AND r.approver_email = ?)
+      GROUP BY r.id
       ORDER BY r.updated_at DESC
-    `).all(user.email) as any[];
+    `).all(user.email, user.email) as any[];
 
     // Calculate statistics
     const todayCount = approvedRequests.filter(r => {
