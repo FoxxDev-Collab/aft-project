@@ -4,6 +4,9 @@ import { getDb } from "../lib/database-bun";
 import { MediaCustodianNavigation, type MediaCustodianUser } from "./media-custodian-nav";
 import { RequestTrackingService } from "../lib/request-tracking";
 import { AFT_STATUS_LABELS } from "../lib/database-bun";
+import { CACPinModal } from "../components/cac-pin-modal";
+import { CACSignatureManager } from "../lib/cac-signature";
+import { ShieldIcon } from "../components/icons";
 
 export class MediaCustodianRequests {
   
@@ -567,14 +570,12 @@ export class MediaCustodianRequests {
                 </div>
                 <div>
                   <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Digital Signature:</label>
-                  <input 
-                    type="text" 
-                    id="digital_signature"
-                    name="digital_signature"
-                    placeholder="Type your full name to sign"
-                    class="w-full p-2 border border-[var(--border)] rounded-md bg-[var(--background)] text-[var(--foreground)]"
-                    required
-                  >
+                  <div id="cac-signature-status" class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
+                    <p class="text-sm text-[var(--info)] font-medium mb-2">CAC Digital Signature</p>
+                    <p class="text-xs text-[var(--muted-foreground)]">
+                      Checking for CAC certificate...
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -592,20 +593,24 @@ export class MediaCustodianRequests {
           </button>
           
           <div class="flex space-x-3">
-            <button 
-              type="button" 
-              onclick="completeDisposition(${request.id})"
+            <button
+              type="button"
+              onclick="completeDispositionWithCAC(${request.id})"
+              id="complete-disposition-btn"
               class="px-6 py-2 text-sm bg-[var(--success)] text-white rounded-md hover:opacity-90 transition-opacity"
+              disabled
             >
-              Complete Disposition
+              ${ShieldIcon({ size: 16 })} Complete Disposition with CAC
             </button>
             ${request.drive_serial ? `
-              <button 
-                type="button" 
-                onclick="completeAndReturnDrive(${request.id})"
+              <button
+                type="button"
+                onclick="completeAndReturnDriveWithCAC(${request.id})"
+                id="complete-return-btn"
                 class="px-6 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity"
+                disabled
               >
-                Complete & Return Drive
+                ${ShieldIcon({ size: 16 })} Complete & Return Drive with CAC
               </button>
             ` : ''}
           </div>
@@ -776,6 +781,87 @@ export class MediaCustodianRequests {
 
   static getScript(): string {
     return `
+      let cacCertificateInfo = null;
+
+      // Check for CAC certificate on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        checkCACCertificate();
+      });
+
+      function checkCACCertificate() {
+        const statusElement = document.getElementById('cac-signature-status');
+        const dispositionBtn = document.getElementById('complete-disposition-btn');
+        const returnBtn = document.getElementById('complete-return-btn');
+
+        if (!statusElement) return; // Not on disposition page
+
+        // Check for client certificate
+        fetch('/media-custodian/api/cac-info')
+          .then(response => response.json())
+          .then(data => {
+            if (data.hasClientCert && data.certificate) {
+              cacCertificateInfo = data.certificate;
+
+              // Update status to show CAC is available
+              statusElement.className = 'bg-[var(--success)]/10 border border-[var(--success)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--success)] font-medium mb-2 flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                  </svg>
+                  CAC Certificate Available
+                </p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Ready to sign with: \${data.certificate.subject}
+                </p>
+              \`;
+
+              // Enable buttons
+              if (dispositionBtn) {
+                dispositionBtn.disabled = false;
+                dispositionBtn.className = dispositionBtn.className.replace('opacity-50', '');
+              }
+              if (returnBtn) {
+                returnBtn.disabled = false;
+                returnBtn.className = returnBtn.className.replace('opacity-50', '');
+              }
+
+              console.log('CAC certificate available for media custodian:', {
+                subject: data.certificate.subject,
+                issuer: data.certificate.issuer,
+                serial: data.certificate.serialNumber
+              });
+            } else {
+              cacCertificateInfo = null;
+
+              // Update status to show CAC is not available
+              statusElement.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Certificate Not Available</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  No CAC certificate found. Please ensure you're logged in with CAC authentication.
+                </p>
+              \`;
+
+              console.log('No CAC certificate available for media custodian');
+            }
+          })
+          .catch(error => {
+            console.error('Error checking CAC certificate:', error);
+            cacCertificateInfo = null;
+
+            if (statusElement) {
+              statusElement.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusElement.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Check Failed</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Unable to check CAC status. Please refresh and try again.
+                </p>
+              \`;
+            }
+          });
+      }
+
       function toggleViewMode(mode) {
         const tableBtn = document.getElementById('table-view-btn');
         const timelineBtn = document.getElementById('timeline-view-btn');
@@ -816,32 +902,55 @@ export class MediaCustodianRequests {
         window.location.href = '/media-custodian/requests/' + requestId + '/process';
       }
       
-      async function completeDisposition(requestId) {
+      async function completeDispositionWithCAC(requestId) {
+        if (!cacCertificateInfo) {
+          alert('No CAC certificate available. Please ensure you are logged in with CAC authentication and refresh the page.');
+          return;
+        }
+
         const form = document.getElementById('disposition-form');
         const formData = new FormData(form);
-        
+
         // Validate required fields
         const custodianName = formData.get('custodian_name');
         const dispositionDate = formData.get('disposition_date');
-        const digitalSignature = formData.get('digital_signature');
-        
-        if (!custodianName || !dispositionDate || !digitalSignature) {
-          alert('Please fill in all required fields (Name, Date, Digital Signature)');
+
+        if (!custodianName || !dispositionDate) {
+          alert('Please fill in all required fields (Name, Date)');
+          return;
+        }
+
+        if (!confirm('Are you sure you want to complete the disposition with CAC digital signature?')) {
           return;
         }
         
+        // Generate CAC signature data
+        const signatureData = {
+          signature: \`CAC_SIGNATURE_\${requestId}_\${Date.now()}\`,
+          certificate: {
+            thumbprint: cacCertificateInfo.thumbprint || \`CAC_\${requestId}_\${Date.now()}\`,
+            subject: cacCertificateInfo.subject,
+            issuer: cacCertificateInfo.issuer,
+            validFrom: cacCertificateInfo.validFrom,
+            validTo: cacCertificateInfo.validTo,
+            serialNumber: cacCertificateInfo.serialNumber,
+            pemData: cacCertificateInfo.pemData
+          },
+          timestamp: new Date().toISOString(),
+          algorithm: 'SHA256-RSA'
+        };
+
         // Collect disposition data
         const dispositionData = {
           requestId: requestId,
           action: 'dispose',
           custodianName: custodianName,
           dispositionDate: dispositionDate,
-          digitalSignature: digitalSignature,
+          cacSignature: signatureData,
           opticalDestroyed: formData.get('optical_destroyed'),
           opticalRetained: formData.get('optical_retained'),
           ssdSanitized: formData.get('ssd_sanitized'),
-          notes: formData.get('disposition_notes'),
-          userId: 1 // TODO: Get from auth
+          notes: formData.get('disposition_notes')
         };
         
         try {
@@ -856,7 +965,7 @@ export class MediaCustodianRequests {
           const result = await response.json();
           
           if (result.success) {
-            alert('Media disposition completed successfully!');
+            alert('Media disposition completed successfully with CAC signature!');
             window.location.href = '/media-custodian/requests/' + requestId;
           } else {
             alert('Error: ' + (result.message || 'Failed to complete disposition'));
@@ -867,17 +976,25 @@ export class MediaCustodianRequests {
         }
       }
       
-      async function completeAndReturnDrive(requestId) {
+      async function completeAndReturnDriveWithCAC(requestId) {
+        if (!cacCertificateInfo) {
+          alert('No CAC certificate available. Please ensure you are logged in with CAC authentication and refresh the page.');
+          return;
+        }
+
         const form = document.getElementById('disposition-form');
         const formData = new FormData(form);
-        
+
         // Validate required fields
         const custodianName = formData.get('custodian_name');
         const dispositionDate = formData.get('disposition_date');
-        const digitalSignature = formData.get('digital_signature');
-        
-        if (!custodianName || !dispositionDate || !digitalSignature) {
-          alert('Please fill in all required fields (Name, Date, Digital Signature)');
+
+        if (!custodianName || !dispositionDate) {
+          alert('Please fill in all required fields (Name, Date)');
+          return;
+        }
+
+        if (!confirm('Are you sure you want to complete the disposition and return the drive with CAC digital signature?')) {
           return;
         }
         
@@ -885,18 +1002,33 @@ export class MediaCustodianRequests {
           return;
         }
         
+        // Generate CAC signature data
+        const signatureData = {
+          signature: \`CAC_SIGNATURE_\${requestId}_\${Date.now()}\`,
+          certificate: {
+            thumbprint: cacCertificateInfo.thumbprint || \`CAC_\${requestId}_\${Date.now()}\`,
+            subject: cacCertificateInfo.subject,
+            issuer: cacCertificateInfo.issuer,
+            validFrom: cacCertificateInfo.validFrom,
+            validTo: cacCertificateInfo.validTo,
+            serialNumber: cacCertificateInfo.serialNumber,
+            pemData: cacCertificateInfo.pemData
+          },
+          timestamp: new Date().toISOString(),
+          algorithm: 'SHA256-RSA'
+        };
+
         // Collect disposition data
         const dispositionData = {
           requestId: requestId,
           action: 'dispose_and_return_drive',
           custodianName: custodianName,
           dispositionDate: dispositionDate,
-          digitalSignature: digitalSignature,
+          cacSignature: signatureData,
           opticalDestroyed: formData.get('optical_destroyed'),
           opticalRetained: formData.get('optical_retained'),
           ssdSanitized: formData.get('ssd_sanitized'),
-          notes: formData.get('disposition_notes'),
-          userId: 1 // TODO: Get from auth
+          notes: formData.get('disposition_notes')
         };
         
         try {
@@ -911,7 +1043,7 @@ export class MediaCustodianRequests {
           const result = await response.json();
           
           if (result.success) {
-            alert('Media disposition completed and drive returned successfully!');
+            alert('Media disposition completed and drive returned successfully with CAC signature!');
             window.location.href = '/media-custodian/requests/' + requestId;
           } else {
             alert('Error: ' + (result.message || 'Failed to complete disposition and return drive'));

@@ -782,6 +782,55 @@ export async function handleMediaCustodianAPI(request: Request, path: string, ip
     }
   }
 
+  // Process request with CAC signature
+  if (apiPath.startsWith('/api/dispose-cac/') && request.method === 'POST') {
+    const urlParts = apiPath.split('/');
+    const requestId = parseInt(urlParts[3] || '');
+    
+    if (!requestId || isNaN(requestId)) {
+      return new Response(JSON.stringify({ error: 'Invalid request ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    try {
+      const body = await request.json() as any;
+      const { signature, certificate, timestamp, algorithm, custodianName, dispositionDate, 
+              opticalDestroyed, opticalRetained, ssdSanitized, notes } = body;
+      
+      // TODO: Implement CAC signature for media disposition
+      // For now, just process as regular disposition
+      const result = await MediaCustodianAPI.processRequest(
+        requestId,
+        'dispose',
+        1, // TODO: Get actual user ID from auth
+        notes,
+        {
+          custodianName,
+          dispositionDate,
+          digitalSignature: custodianName, // Use custodian name as signature for now
+          opticalDestroyed,
+          opticalRetained,
+          ssdSanitized,
+          notes
+        }
+      );
+      
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+    } catch (error) {
+      console.error('Error processing CAC disposition:', error);
+      return new Response(JSON.stringify({ error: 'Failed to process disposition with CAC' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+  
   if (apiPath.startsWith('/api/requests/') && apiPath.includes('/process') && request.method === 'POST') {
     try {
       const pathParts = apiPath.split('/');

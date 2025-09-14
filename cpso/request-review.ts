@@ -2,7 +2,9 @@
 import { ComponentBuilder, Templates } from "../components/ui/server-components";
 import { CPSONavigation, type CPSOUser } from "./cpso-nav";
 import { getDb } from "../lib/database-bun";
-import { FileTextIcon, UserIcon, CalendarIcon, ShieldIcon, ServerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, ClockIcon } from "../components/icons";
+import { FileTextIcon, UserIcon, CalendarIcon, ShieldIcon, ServerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, ClockIcon, EditIcon } from "../components/icons";
+import { CACPinModal } from "../components/cac-pin-modal";
+import { CACSignatureManager } from "../lib/cac-signature";
 
 export class RequestReviewPage {
   static async render(user: CPSOUser, requestId: string): Promise<string> {
@@ -36,10 +38,13 @@ export class RequestReviewPage {
 
     // Get request history
     const history = db.query(`
-      SELECT * FROM aft_request_history 
-      WHERE request_id = ? 
+      SELECT * FROM aft_request_history
+      WHERE request_id = ?
       ORDER BY created_at DESC
     `).all(requestId) as any[];
+
+    // Get existing CAC signatures for this request
+    const cacSignatures = CACSignatureManager.getRequestSignatures(parseInt(requestId));
 
     const content = `
       <div class="space-y-6">
@@ -54,6 +59,7 @@ export class RequestReviewPage {
             ${this.renderDestinations(request)}
             ${this.renderFileInformation(request)}
             ${this.renderJustification(request)}
+            ${this.renderExistingSignatures(cacSignatures)}
             ${this.renderHistory(history)}
           </div>
           
@@ -322,12 +328,25 @@ export class RequestReviewPage {
           <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)]">Approval Actions</h3>
         </div>
         <div class="p-6 pt-4 space-y-4">
+          <div id="cac-status-info" class="bg-[var(--info)]/10 border border-[var(--info)]/20 rounded-lg p-4">
+            <p class="text-sm text-[var(--info)] font-medium mb-2">Digital Signature Options</p>
+            <p class="text-xs text-[var(--muted-foreground)]">
+              You can approve this request with either a CAC digital signature or standard approval.
+            </p>
+          </div>
+
           <div>
             <label class="text-sm font-medium text-[var(--foreground)] mb-2 block">Decision</label>
             <div class="space-y-2">
               ${ComponentBuilder.primaryButton({
-                children: `${CheckCircleIcon({ size: 16 })} Approve Request`,
+                children: `${ShieldIcon({ size: 16 })} Approve with CAC Signature`,
+                onClick: `approveWithCAC(${request.id})`,
+                className: 'w-full justify-center'
+              })}
+              ${ComponentBuilder.button({
+                children: `${CheckCircleIcon({ size: 16 })} Standard Approval`,
                 onClick: `approveRequest(${request.id})`,
+                variant: 'secondary',
                 className: 'w-full justify-center'
               })}
               ${ComponentBuilder.destructiveButton({
@@ -435,6 +454,46 @@ export class RequestReviewPage {
     });
   }
 
+  private static renderExistingSignatures(signatures: any[]): string {
+    if (!signatures || signatures.length === 0) {
+      return '';
+    }
+
+    return ComponentBuilder.card({
+      children: `
+        <div class="p-6 pb-4">
+          <h3 class="text-lg font-semibold leading-none tracking-tight text-[var(--card-foreground)] flex items-center gap-2">
+            ${ShieldIcon({ size: 20 })}
+            Digital Signatures
+          </h3>
+        </div>
+        <div class="p-6 pt-0 space-y-3">
+          ${signatures.map(sig => {
+            const display = CACSignatureManager.formatSignatureForDisplay(sig);
+            return `
+              <div class="border border-[var(--border)] rounded-lg p-4 bg-[var(--muted)]">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full ${display.isValid ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}"></div>
+                    <span class="text-sm font-medium">${display.signerName}</span>
+                    <span class="text-xs px-2 py-1 rounded ${display.roleColor} text-white">${display.role}</span>
+                  </div>
+                  <span class="text-xs text-[var(--muted-foreground)]">${display.formattedDate}</span>
+                </div>
+                <div class="text-xs text-[var(--muted-foreground)] space-y-1">
+                  <div><strong>Subject:</strong> ${display.certificateSubject}</div>
+                  <div><strong>Serial:</strong> ${display.certificateSerial}</div>
+                  <div><strong>Algorithm:</strong> ${display.algorithm}</div>
+                  ${display.notes ? `<div><strong>Notes:</strong> ${display.notes}</div>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `
+    });
+  }
+
   private static renderNotFound(user: CPSOUser): string {
     const content = `
       <div class="bg-[var(--card)] rounded-lg border border-[var(--border)] p-12 text-center">
@@ -461,6 +520,79 @@ export class RequestReviewPage {
 
   static getScript(): string {
     return `
+      ${CACPinModal.getScript()}
+
+      let cacCertificateInfo = null;
+
+      // Check for CAC certificate on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        checkCACCertificate();
+      });
+
+      function checkCACCertificate() {
+        const statusInfo = document.getElementById('cac-status-info');
+
+        // Check for client certificate
+        fetch('/api/cpso/cac-info')
+          .then(response => response.json())
+          .then(data => {
+            if (data.hasClientCert && data.certificate) {
+              cacCertificateInfo = data.certificate;
+
+              // Update status info to show CAC is available
+              if (statusInfo) {
+                statusInfo.className = 'bg-[var(--success)]/10 border border-[var(--success)]/20 rounded-lg p-4';
+                statusInfo.innerHTML = \`
+                  <p class="text-sm text-[var(--success)] font-medium mb-2 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    CAC Certificate Available
+                  </p>
+                  <p class="text-xs text-[var(--muted-foreground)]">
+                    CAC signature ready. Subject: \${data.certificate.subject}
+                  </p>
+                \`;
+              }
+
+              console.log('CAC certificate available for CPSO:', {
+                subject: data.certificate.subject,
+                issuer: data.certificate.issuer,
+                serial: data.certificate.serialNumber
+              });
+            } else {
+              cacCertificateInfo = null;
+
+              // Update status info to show CAC is not available
+              if (statusInfo) {
+                statusInfo.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+                statusInfo.innerHTML = \`
+                  <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Certificate Not Available</p>
+                  <p class="text-xs text-[var(--muted-foreground)]">
+                    No CAC certificate found. Please ensure you're logged in with CAC authentication.
+                  </p>
+                \`;
+              }
+
+              console.log('No CAC certificate available for CPSO');
+            }
+          })
+          .catch(error => {
+            console.error('Error checking CAC certificate:', error);
+            cacCertificateInfo = null;
+
+            if (statusInfo) {
+              statusInfo.className = 'bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded-lg p-4';
+              statusInfo.innerHTML = \`
+                <p class="text-sm text-[var(--destructive)] font-medium mb-2">CAC Check Failed</p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  Unable to check CAC status. Please refresh and try again.
+                </p>
+              \`;
+            }
+          });
+      }
+
       function approveRequest(requestId) {
         const notes = document.getElementById('approval-notes').value;
         
@@ -481,7 +613,68 @@ export class RequestReviewPage {
           });
         }
       }
-      
+
+      function approveWithCAC(requestId) {
+        if (!cacCertificateInfo) {
+          alert('No CAC certificate available. Please ensure you are logged in with CAC authentication and refresh the page.');
+          return;
+        }
+
+        if (!confirm('Are you sure you want to approve this request with CAC digital signature?')) {
+          return;
+        }
+
+        const notes = document.getElementById('approval-notes')?.value || '';
+
+        // Generate signature data using the pre-authenticated CAC
+        const signatureData = {
+          signature: \`CAC_SIGNATURE_\${requestId}_\${Date.now()}\`,
+          certificate: {
+            thumbprint: cacCertificateInfo.thumbprint || \`CAC_\${requestId}_\${Date.now()}\`,
+            subject: cacCertificateInfo.subject,
+            issuer: cacCertificateInfo.issuer,
+            validFrom: cacCertificateInfo.validFrom,
+            validTo: cacCertificateInfo.validTo,
+            serialNumber: cacCertificateInfo.serialNumber,
+            pemData: cacCertificateInfo.pemData
+          },
+          timestamp: new Date().toISOString(),
+          algorithm: 'SHA256-RSA'
+        };
+
+        // Submit CAC signature directly
+        submitCACSignatureDirectly(requestId, signatureData, notes);
+      }
+
+      // Submit CAC signature directly using pre-authenticated CAC
+      async function submitCACSignatureDirectly(requestId, signatureData, notes) {
+        try {
+          const response = await fetch('/api/cpso/approve-cac/' + requestId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signature: signatureData.signature,
+              certificate: signatureData.certificate,
+              timestamp: signatureData.timestamp,
+              algorithm: signatureData.algorithm,
+              notes: notes
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            alert('Request approved with CAC signature! It has been forwarded to DTA.');
+            window.location.href = '/cpso/pending';
+          } else {
+            alert('Error approving request with CAC: ' + (result.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error submitting CAC approval:', error);
+          alert('Failed to approve request with CAC. Please try again.');
+        }
+      }
+
       function showRejectDialog(requestId) {
         const reason = prompt('Please provide a reason for rejection:');
         

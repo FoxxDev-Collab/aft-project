@@ -4,13 +4,25 @@ import { MediaCustodianRequests } from '../../media-custodian/requests';
 import { MediaCustodianInventory } from '../../media-custodian/inventory';
 import { MediaCustodianReports } from '../../media-custodian/reports';
 import { MediaCustodianAPI } from '../api/media-custodian-api';
-import { getDb } from '../../lib/database-bun';
+import { getDb, UserRole } from '../../lib/database-bun';
+import { RoleMiddleware } from '../../middleware/role-middleware';
 import { createHtmlPage } from '../utils';
 
 // Export handler function for main server
 export async function handleMediaCustodianRoutes(request: Request, path: string, ipAddress: string): Promise<Response> {
-  // Extract user from session/auth
-  const user = { id: 1, email: 'media-custodian@aft.gov', role: 'media-custodian' }; // TODO: Get from auth
+  // Check authentication and MEDIA_CUSTODIAN role
+  const authResult = await RoleMiddleware.checkAuthAndRole(request, ipAddress);
+  if (authResult.response) return authResult.response;
+  const activeRole = authResult.session.activeRole || authResult.session.primaryRole;
+  if (activeRole !== UserRole.MEDIA_CUSTODIAN) {
+    return RoleMiddleware.accessDenied(`This area requires MEDIA_CUSTODIAN role. Your current role is ${activeRole?.toUpperCase()}.`);
+  }
+
+  const user = {
+    id: authResult.session.userId,
+    email: authResult.session.email,
+    role: activeRole
+  };
   
   if (path === '/media-custodian' || path === '/media-custodian/') {
     return MediaCustodianRoutes.handleDashboard(request, user);
@@ -28,7 +40,7 @@ export async function handleMediaCustodianRoutes(request: Request, path: string,
     return MediaCustodianRoutes.handleReportsPage(request, user);
   } else if (path.startsWith('/media-custodian/api/')) {
     const endpoint = path.replace('/media-custodian/api/', '');
-    return MediaCustodianRoutes.handleAPI(request, user, endpoint);
+    return MediaCustodianRoutes.handleAPI(request, user, endpoint, authResult.session);
   }
   
   return new Response('Not Found', { status: 404 });
@@ -164,7 +176,7 @@ export class MediaCustodianRoutes {
   }
     
   // API endpoints for media custodian operations
-  static async handleAPI(request: Request, user: any, endpoint: string): Promise<Response> {
+  static async handleAPI(request: Request, user: any, endpoint: string, session?: any): Promise<Response> {
     try {
       const method = request.method;
       const url = new URL(request.url);
@@ -247,6 +259,77 @@ export class MediaCustodianRoutes {
           }
           break;
           
+        case 'cac-info':
+          if (method === 'GET') {
+            try {
+              // Check if we have CAC info stored in the session
+              let hasCACCert = false;
+              let certInfo = null;
+
+              if (session?.cacCertificate) {
+                // Use CAC from session
+                hasCACCert = true;
+                certInfo = session.cacCertificate;
+                console.log('Using CAC Certificate from session for media custodian:', {
+                  subject: certInfo.subject,
+                  issuer: certInfo.issuer,
+                  serial: certInfo.serialNumber
+                });
+              } else {
+                // Check headers as fallback
+                const clientCertSubject = request.headers.get('X-Client-Cert-Subject');
+                const clientCertIssuer = request.headers.get('X-Client-Cert-Issuer');
+                const clientCertSerial = request.headers.get('X-Client-Cert-Serial');
+                const clientCertFingerprint = request.headers.get('X-Client-Cert-Fingerprint');
+                const clientCertNotBefore = request.headers.get('X-Client-Cert-Not-Before');
+                const clientCertNotAfter = request.headers.get('X-Client-Cert-Not-After');
+                const clientCertPEM = request.headers.get('X-Client-Cert-PEM');
+
+                if (clientCertSubject && clientCertIssuer) {
+                  hasCACCert = true;
+                  certInfo = {
+                    subject: clientCertSubject,
+                    issuer: clientCertIssuer,
+                    serialNumber: clientCertSerial || 'Unknown',
+                    thumbprint: clientCertFingerprint || 'Unknown',
+                    validFrom: clientCertNotBefore || new Date().toISOString(),
+                    validTo: clientCertNotAfter || new Date().toISOString(),
+                    pemData: clientCertPEM || null
+                  };
+
+                  console.log('CAC Certificate detected via headers for media custodian:', {
+                    subject: clientCertSubject,
+                    issuer: clientCertIssuer,
+                    serial: clientCertSerial
+                  });
+                } else {
+                  // No client certificate provided
+                  hasCACCert = false;
+                  certInfo = null;
+                  console.log('No CAC certificate found in session or headers for media custodian');
+                }
+              }
+
+              return new Response(JSON.stringify({
+                hasClientCert: hasCACCert,
+                certificate: certInfo
+              }), {
+                headers: { 'Content-Type': 'application/json' }
+              });
+            } catch (error) {
+              console.error('Error getting CAC info for media custodian:', error);
+              return new Response(JSON.stringify({
+                hasClientCert: false,
+                certificate: null,
+                error: 'Failed to retrieve CAC information'
+              }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+          }
+          break;
+
         default:
           // Handle drive-specific endpoints like drives/:id, drives/:id/issue, drives/:id/return
           if (endpoint.startsWith('drives/')) {

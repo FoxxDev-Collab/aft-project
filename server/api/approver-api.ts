@@ -48,6 +48,76 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           }
         });
       }
+
+      // Get client certificate information for CAC authentication
+      if (apiPath === 'cac-info') {
+        try {
+          // First check if we have CAC info stored in the session
+          let hasCACCert = false;
+          let certInfo = null;
+
+          if (session.cacCertificate) {
+            // Use CAC from session
+            hasCACCert = true;
+            certInfo = session.cacCertificate;
+            console.log('Using CAC Certificate from session for approver:', {
+              subject: certInfo.subject,
+              issuer: certInfo.issuer,
+              serial: certInfo.serialNumber
+            });
+          } else {
+            // Check headers as fallback (shouldn't happen with proper setup)
+            const clientCertSubject = request.headers.get('X-Client-Cert-Subject');
+            const clientCertIssuer = request.headers.get('X-Client-Cert-Issuer');
+            const clientCertSerial = request.headers.get('X-Client-Cert-Serial');
+            const clientCertFingerprint = request.headers.get('X-Client-Cert-Fingerprint');
+            const clientCertNotBefore = request.headers.get('X-Client-Cert-Not-Before');
+            const clientCertNotAfter = request.headers.get('X-Client-Cert-Not-After');
+            const clientCertPEM = request.headers.get('X-Client-Cert-PEM');
+
+            if (clientCertSubject && clientCertIssuer) {
+              hasCACCert = true;
+              certInfo = {
+                subject: clientCertSubject,
+                issuer: clientCertIssuer,
+                serialNumber: clientCertSerial || 'Unknown',
+                thumbprint: clientCertFingerprint || 'Unknown',
+                validFrom: clientCertNotBefore || new Date().toISOString(),
+                validTo: clientCertNotAfter || new Date().toISOString(),
+                pemData: clientCertPEM || null
+              };
+
+              console.log('CAC Certificate detected via headers for approver:', {
+                subject: clientCertSubject,
+                issuer: clientCertIssuer,
+                serial: clientCertSerial
+              });
+            } else {
+              // No client certificate provided
+              hasCACCert = false;
+              certInfo = null;
+              console.log('No CAC certificate found in session or headers for approver');
+            }
+          }
+
+          return new Response(JSON.stringify({
+            hasClientCert: hasCACCert,
+            certificate: certInfo
+          }), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } catch (error) {
+          console.error('Error getting CAC info for approver:', error);
+          return new Response(JSON.stringify({
+            hasClientCert: false,
+            certificate: null,
+            error: 'Failed to retrieve CAC information'
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
     }
     
     // POST endpoints
