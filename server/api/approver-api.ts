@@ -4,6 +4,7 @@ import { RoleMiddleware } from "../../middleware/role-middleware";
 import { UserRole } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
 import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
+import { emailService, getNextApproverEmails } from "../../lib/email-service";
 
 export async function handleApproverAPI(request: Request, path: string, ipAddress: string): Promise<Response> {
   // Check authentication and APPROVER role (ISSM only)
@@ -256,6 +257,12 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           });
         }
         
+        // Get request details for notification
+        const requestData = db.query(`
+          SELECT request_number, requestor_email, transfer_type, classification
+          FROM aft_requests WHERE id = ?
+        `).get(requestId) as any;
+
         // Add to history (ISSM approval)
         const historyAction = 'ISSM_APPROVED';
         const historyNotes = notes || 'Request approved by ISSM - Forwarded to CPSO';
@@ -263,7 +270,29 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
           VALUES (?, ?, ?, ?, unixepoch())
         `).run(requestId, historyAction, session.email, historyNotes);
-        
+
+        // Notify CPSO approvers
+        const cpsoEmails = await getNextApproverEmails(newStatus);
+        for (const email of cpsoEmails) {
+          await emailService.notifyNextApprover(requestId, newStatus, email, {
+            requestNumber: requestData.request_number,
+            requestorName: requestData.requestor_email,
+            transferType: requestData.transfer_type || 'N/A',
+            classification: requestData.classification || 'N/A',
+            notes: notes
+          });
+        }
+
+        // Notify requestor of approval progress
+        await emailService.notifyRequestApproved(requestId, requestData.requestor_email, {
+          requestNumber: requestData.request_number,
+          requestorName: requestData.requestor_email,
+          transferType: requestData.transfer_type || 'N/A',
+          classification: requestData.classification || 'N/A',
+          nextApprover: 'ISSM',
+          notes: notes
+        });
+
         // Log the action
         await auditLog(
           session.userId,
@@ -342,12 +371,31 @@ export async function handleApproverAPI(request: Request, path: string, ipAddres
           });
         }
         
+        // Get request details for notification
+        const requestData = db.query(`
+          SELECT request_number, requestor_email, transfer_type, classification
+          FROM aft_requests WHERE id = ?
+        `).get(requestId) as any;
+
         // Add to history
         db.prepare(`
           INSERT INTO aft_request_history (request_id, action, user_email, notes, created_at)
           VALUES (?, 'REJECTED', ?, ?, unixepoch())
         `).run(requestId, session.email, `Reason: ${reason}. ${notes || ''}`);
-        
+
+        // Notify requestor of rejection
+        if (requestData) {
+          await emailService.notifyRequestRejected(requestId, requestData.requestor_email, {
+            requestNumber: requestData.request_number,
+            requestorName: requestData.requestor_email,
+            transferType: requestData.transfer_type || 'N/A',
+            classification: requestData.classification || 'N/A',
+            nextApprover: 'ISSM',
+            rejectionReason: reason,
+            notes: notes
+          });
+        }
+
         // Log the action
         await auditLog(
           session.userId,

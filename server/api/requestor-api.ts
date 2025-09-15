@@ -3,6 +3,7 @@ import { getDb, UserRole, generateRequestNumber } from "../../lib/database-bun";
 import { auditLog } from "../../lib/security";
 import { RoleMiddleware } from "../../middleware/role-middleware";
 import { CACSignatureManager, type CACSignatureData } from "../../lib/cac-signature";
+import { emailService, getNextApproverEmails } from "../../lib/email-service";
 
 const db = getDb();
 
@@ -243,8 +244,27 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
         
         requestId = result.id;
       }
-      
-      await auditLog(authResult.session.userId, 'AFT_DRAFT_SAVED', 
+
+      // Send notification if DTA was selected
+      if (requestData.dta_id) {
+        const dtaUser = db.query(`
+          SELECT email, first_name, last_name
+          FROM users
+          WHERE id = ?
+        `).get(parseInt(requestData.dta_id)) as any;
+
+        if (dtaUser) {
+          await emailService.notifyDTASelection(requestId, dtaUser.email, {
+            requestNumber: requestData.media_control_number,
+            requestorName: authResult.session.email,
+            transferType: requestData.transfer_type || 'N/A',
+            classification: requestData.overall_classification || 'N/A',
+            dtaName: `${dtaUser.first_name} ${dtaUser.last_name}`
+          });
+        }
+      }
+
+      await auditLog(authResult.session.userId, 'AFT_DRAFT_SAVED',
         `AFT request draft saved: ${requestData.media_control_number}`, ipAddress);
       
       return new Response(JSON.stringify({ 
@@ -432,6 +452,17 @@ export async function handleRequestorAPI(request: Request, path: string, ipAddre
           submitted_at = unixepoch()
         WHERE id = ?
       `).run(nextStatus, signatureMethod, requestId);
+
+      // Notify next approver in the queue
+      const nextApproverEmails = await getNextApproverEmails(nextStatus);
+      for (const email of nextApproverEmails) {
+        await emailService.notifyNextApprover(requestId, nextStatus, email, {
+          requestNumber: existingRequest.request_number,
+          requestorName: authResult.session.email,
+          transferType: existingRequest.transfer_type || 'N/A',
+          classification: existingRequest.classification || 'N/A'
+        });
+      }
       
       // History: mark submission with signature method
       const historyNote = signatureMethod === 'cac' 
